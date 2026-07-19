@@ -139,6 +139,32 @@ describe("parseScenario", () => {
     ]);
   });
 
+  it("aggregates safe semantic diagnostics with structural diagnostics", () => {
+    const source = replace(
+      "  description: Practice selecting different acceptance and production releases.\n",
+      "",
+    ).replace("status: ready", "status: missing");
+    const result = parseScenario(source);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.map(({ code }) => code)).toEqual(
+      expect.arrayContaining(["schema.invalid", "ticket.status-not-found"]),
+    );
+  });
+
+  it("rejects behavior check IDs duplicated across required and forbidden lists", () => {
+    const result = parseScenario(replace("id: no-debug-log", "id: typecheck"));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual({
+      code: "check.duplicate-id",
+      message: "Duplicate identifier 'typecheck'.",
+      path: ["checks", "forbidden", 0, "id"],
+    });
+  });
+
   it("rejects incomplete check definitions structurally", () => {
     const result = parseScenario(replace("      args: [typecheck]\n", ""));
     expect(result.ok).toBe(false);

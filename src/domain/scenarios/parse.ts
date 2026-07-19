@@ -49,73 +49,97 @@ const duplicates = (
   });
 };
 
+interface SemanticParts {
+  ticketStatuses: ScenarioV1Input["ticketStatuses"] | undefined;
+  tickets: ScenarioV1Input["tickets"] | undefined;
+  commits: ScenarioV1Input["commits"] | undefined;
+  releases: ScenarioV1Input["releases"] | undefined;
+  checks: ScenarioV1Input["checks"] | undefined;
+  hints: ScenarioV1Input["hints"] | undefined;
+  scoring: ScenarioV1Input["scoring"] | undefined;
+}
+
 const validateReferences = (
-  scenario: ScenarioV1Input,
+  parts: SemanticParts,
   diagnostics: MutableDiagnostic[],
 ): void => {
-  const statusIds = new Set(scenario.ticketStatuses.map(({ id }) => id));
-  const ticketIds = new Set(scenario.tickets.map(({ id }) => id));
-  const commitIds = new Set(scenario.commits.map(({ id }) => id));
-
-  scenario.tickets.forEach((ticket, index) => {
-    if (!statusIds.has(ticket.status))
-      diagnostics.push(
-        diagnostic(
-          "ticket.status-not-found",
-          `Ticket status '${ticket.status}' does not exist.`,
-          ["tickets", index, "status"],
-        ),
-      );
-  });
-  scenario.commits.forEach((commit, index) => {
-    if (!ticketIds.has(commit.ticket))
-      diagnostics.push(
-        diagnostic(
-          "commit.ticket-not-found",
-          `Ticket '${commit.ticket}' does not exist.`,
-          ["commits", index, "ticket"],
-        ),
-      );
-    commit.dependsOn.forEach((dependency, dependencyIndex) => {
-      if (!commitIds.has(dependency))
+  if (parts.ticketStatuses && parts.tickets) {
+    const statusIds = new Set(parts.ticketStatuses.map(({ id }) => id));
+    parts.tickets.forEach((ticket, index) => {
+      if (!statusIds.has(ticket.status))
         diagnostics.push(
           diagnostic(
-            "commit.dependency-not-found",
-            `Commit dependency '${dependency}' does not exist.`,
-            ["commits", index, "dependsOn", dependencyIndex],
+            "ticket.status-not-found",
+            `Ticket status '${ticket.status}' does not exist.`,
+            ["tickets", index, "status"],
           ),
         );
     });
-  });
-  (["acceptance", "production"] as const).forEach((name) => {
-    const policy = scenario.releases[name];
-    if (!commitIds.has(policy.baseline))
-      diagnostics.push(
-        diagnostic(
-          "release.baseline-not-found",
-          `Release baseline '${policy.baseline}' does not exist.`,
-          ["releases", name, "baseline"],
-        ),
-      );
-    policy.tickets.forEach((ticket, index) => {
-      if (!ticketIds.has(ticket))
+  }
+  if (parts.commits) {
+    const commitIds = new Set(parts.commits.map(({ id }) => id));
+    const ticketIds = parts.tickets
+      ? new Set(parts.tickets.map(({ id }) => id))
+      : undefined;
+    parts.commits.forEach((commit, index) => {
+      if (ticketIds && !ticketIds.has(commit.ticket))
         diagnostics.push(
           diagnostic(
-            "release.ticket-not-found",
-            `Release ticket '${ticket}' does not exist.`,
-            ["releases", name, "tickets", index],
+            "commit.ticket-not-found",
+            `Ticket '${commit.ticket}' does not exist.`,
+            ["commits", index, "ticket"],
           ),
         );
+      commit.dependsOn.forEach((dependency, dependencyIndex) => {
+        if (!commitIds.has(dependency))
+          diagnostics.push(
+            diagnostic(
+              "commit.dependency-not-found",
+              `Commit dependency '${dependency}' does not exist.`,
+              ["commits", index, "dependsOn", dependencyIndex],
+            ),
+          );
+      });
     });
-  });
+  }
+  if (parts.releases) {
+    const commitIds = parts.commits
+      ? new Set(parts.commits.map(({ id }) => id))
+      : undefined;
+    const ticketIds = parts.tickets
+      ? new Set(parts.tickets.map(({ id }) => id))
+      : undefined;
+    (["acceptance", "production"] as const).forEach((name) => {
+      const policy = parts.releases?.[name];
+      if (!policy) return;
+      if (commitIds && !commitIds.has(policy.baseline))
+        diagnostics.push(
+          diagnostic(
+            "release.baseline-not-found",
+            `Release baseline '${policy.baseline}' does not exist.`,
+            ["releases", name, "baseline"],
+          ),
+        );
+      policy.tickets.forEach((ticket, index) => {
+        if (ticketIds && !ticketIds.has(ticket))
+          diagnostics.push(
+            diagnostic(
+              "release.ticket-not-found",
+              `Release ticket '${ticket}' does not exist.`,
+              ["releases", name, "tickets", index],
+            ),
+          );
+      });
+    });
+  }
 };
 
 const validateCycles = (
-  scenario: ScenarioV1Input,
+  commits: ScenarioV1Input["commits"],
   diagnostics: MutableDiagnostic[],
 ): void => {
   const byId = new Map(
-    scenario.commits.map((commit, index) => [commit.id, { commit, index }]),
+    commits.map((commit, index) => [commit.id, { commit, index }]),
   );
   const visiting = new Set<string>();
   const visited = new Set<string>();
@@ -140,24 +164,28 @@ const validateCycles = (
     visiting.delete(id);
     visited.add(id);
   };
-  scenario.commits.forEach(({ id }) => {
+  commits.forEach(({ id }) => {
     visit(id);
   });
 };
 
-const validateChecksHintsAndScoring = (
-  scenario: ScenarioV1Input,
+const validateChecks = (
+  checks: ScenarioV1Input["checks"],
   diagnostics: MutableDiagnostic[],
 ): void => {
   const safeCommand = /^[A-Za-z0-9_./-]+$/u;
+  const seen = new Set<string>();
   (["required", "forbidden"] as const).forEach((kind) => {
-    duplicates(
-      scenario.checks[kind],
-      `checks.${kind}`,
-      "check.duplicate-id",
-      diagnostics,
-    );
-    scenario.checks[kind].forEach((check, index) => {
+    checks[kind].forEach((check, index) => {
+      if (seen.has(check.id))
+        diagnostics.push(
+          diagnostic(
+            "check.duplicate-id",
+            `Duplicate identifier '${check.id}'.`,
+            ["checks", kind, index, "id"],
+          ),
+        );
+      seen.add(check.id);
       if (
         !safeCommand.test(check.command) ||
         check.args.some((argument) => /[\0\r\n]/u.test(argument))
@@ -172,7 +200,13 @@ const validateChecksHintsAndScoring = (
       }
     });
   });
-  scenario.hints.forEach((hint, index) => {
+};
+
+const validateHints = (
+  hints: ScenarioV1Input["hints"],
+  diagnostics: MutableDiagnostic[],
+): void => {
+  hints.forEach((hint, index) => {
     if (hint.tier !== index + 1)
       diagnostics.push(
         diagnostic(
@@ -182,7 +216,13 @@ const validateChecksHintsAndScoring = (
         ),
       );
   });
-  for (const [name, weight] of Object.entries(scenario.scoring)) {
+};
+
+const validateScoring = (
+  scoring: ScenarioV1Input["scoring"],
+  diagnostics: MutableDiagnostic[],
+): void => {
+  for (const [name, weight] of Object.entries(scoring)) {
     if (weight < 0)
       diagnostics.push(
         diagnostic(
@@ -192,10 +232,7 @@ const validateChecksHintsAndScoring = (
         ),
       );
   }
-  const total = Object.values(scenario.scoring).reduce(
-    (sum, weight) => sum + weight,
-    0,
-  );
+  const total = Object.values(scoring).reduce((sum, weight) => sum + weight, 0);
   if (total !== 100)
     diagnostics.push(
       diagnostic(
@@ -206,20 +243,49 @@ const validateChecksHintsAndScoring = (
     );
 };
 
-const validateSemantics = (scenario: ScenarioV1Input): MutableDiagnostic[] => {
+const validateSemantics = (parts: SemanticParts): MutableDiagnostic[] => {
   const diagnostics: MutableDiagnostic[] = [];
-  duplicates(
-    scenario.ticketStatuses,
-    "ticketStatuses",
-    "ticket-status.duplicate-id",
-    diagnostics,
-  );
-  duplicates(scenario.tickets, "tickets", "ticket.duplicate-id", diagnostics);
-  duplicates(scenario.commits, "commits", "commit.duplicate-id", diagnostics);
-  validateReferences(scenario, diagnostics);
-  validateCycles(scenario, diagnostics);
-  validateChecksHintsAndScoring(scenario, diagnostics);
+  if (parts.ticketStatuses)
+    duplicates(
+      parts.ticketStatuses,
+      "ticketStatuses",
+      "ticket-status.duplicate-id",
+      diagnostics,
+    );
+  if (parts.tickets)
+    duplicates(parts.tickets, "tickets", "ticket.duplicate-id", diagnostics);
+  if (parts.commits) {
+    duplicates(parts.commits, "commits", "commit.duplicate-id", diagnostics);
+    validateCycles(parts.commits, diagnostics);
+  }
+  validateReferences(parts, diagnostics);
+  if (parts.checks) validateChecks(parts.checks, diagnostics);
+  if (parts.hints) validateHints(parts.hints, diagnostics);
+  if (parts.scoring) validateScoring(parts.scoring, diagnostics);
   return diagnostics;
+};
+
+const safeSemanticParts = (input: unknown): SemanticParts => {
+  const value = input !== null && typeof input === "object" ? input : {};
+  const fields = value as Record<string, unknown>;
+  const ticketStatuses = scenarioV1Schema.shape.ticketStatuses.safeParse(
+    fields.ticketStatuses,
+  );
+  const tickets = scenarioV1Schema.shape.tickets.safeParse(fields.tickets);
+  const commits = scenarioV1Schema.shape.commits.safeParse(fields.commits);
+  const releases = scenarioV1Schema.shape.releases.safeParse(fields.releases);
+  const checks = scenarioV1Schema.shape.checks.safeParse(fields.checks);
+  const hints = scenarioV1Schema.shape.hints.safeParse(fields.hints);
+  const scoring = scenarioV1Schema.shape.scoring.safeParse(fields.scoring);
+  return {
+    ticketStatuses: ticketStatuses.success ? ticketStatuses.data : undefined,
+    tickets: tickets.success ? tickets.data : undefined,
+    commits: commits.success ? commits.data : undefined,
+    releases: releases.success ? releases.data : undefined,
+    checks: checks.success ? checks.data : undefined,
+    hints: hints.success ? hints.data : undefined,
+    scoring: scoring.success ? scoring.data : undefined,
+  };
 };
 
 export const parseScenario = (
@@ -257,17 +323,21 @@ export const parseScenario = (
   }
   const parsed = scenarioV1Schema.safeParse(input);
   if (!parsed.success) {
+    const semanticDiagnostics = validateSemantics(safeSemanticParts(input));
     return {
       ok: false,
-      diagnostics: parsed.error.issues.map((issue) =>
-        diagnostic(
-          "schema.invalid",
-          issue.message,
-          issue.path.map((segment) =>
-            typeof segment === "symbol" ? String(segment) : segment,
+      diagnostics: [
+        ...parsed.error.issues.map((issue) =>
+          diagnostic(
+            "schema.invalid",
+            issue.message,
+            issue.path.map((segment) =>
+              typeof segment === "symbol" ? String(segment) : segment,
+            ),
           ),
         ),
-      ),
+        ...semanticDiagnostics,
+      ],
     };
   }
   const diagnostics = validateSemantics(parsed.data);
