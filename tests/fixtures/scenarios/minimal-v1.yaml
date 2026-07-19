@@ -1,0 +1,55 @@
+schemaVersion: 1
+metadata:
+  id: tutorial-minimal
+  title: Minimal release exercise
+  description: Practice selecting different acceptance and production releases.
+seed: 42
+ticketStatuses:
+  - id: ready
+    name: Ready
+  - id: done
+    name: Done
+tickets:
+  - id: TEA-101
+    title: First ticket
+    status: done
+  - id: TEA-102
+    title: Second ticket
+    status: ready
+commits:
+  - id: commit-b
+    ticket: TEA-102
+    message: Prepare second ticket
+    dependsOn: [commit-a]
+  - id: commit-a
+    ticket: TEA-101
+    message: Complete first ticket
+    dependsOn: []
+releases:
+  acceptance:
+    baseline: commit-a
+    tickets: [TEA-101]
+  production:
+    baseline: commit-b
+    tickets: [TEA-101, TEA-102]
+checks:
+  required:
+    - id: typecheck
+      command: pnpm
+      args: [typecheck]
+    - id: tests
+      command: pnpm
+      args: [test]
+  forbidden:
+    - id: no-debug-log
+      command: rg
+      args: [console.log, src]
+hints:
+  - tier: 1
+    text: Inspect the ticket dependencies.
+  - tier: 2
+    text: Compare the release scopes.
+scoring:
+  ticketSelection: 40
+  commitOrdering: 30
+  releaseReadiness: 30
