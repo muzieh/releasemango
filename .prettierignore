@@ -1,0 +1,9 @@
+dist
+coverage
+node_modules
+pnpm-lock.yaml
+.sdlc
+.agents
+.claude
+CLAUDE.md
+SESSION_HANDOFF.md

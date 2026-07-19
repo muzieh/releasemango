@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Generated player workspaces belong in an OS temporary directory, never here.
+.releasemango-workspaces/
