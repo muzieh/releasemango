@@ -22,4 +22,14 @@ export default tseslint.config(
     files: ["**/*.js"],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    files: ["public/**/*.js"],
+    languageOptions: {
+      globals: {
+        document: "readonly",
+        EventSource: "readonly",
+        fetch: "readonly",
+      },
+    },
+  },
 );

@@ -6,3 +6,7 @@ coverage/
 
 # Generated player workspaces belong in an OS temporary directory, never here.
 .releasemango-workspaces/
+
+# Local workflow dashboard runtime state is durable but machine-specific.
+.workflow-status/
+.sdlc/

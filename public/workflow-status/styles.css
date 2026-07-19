@@ -1,0 +1,133 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: #09110e;
+  color: #eef8f1;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 80% 0%, #214a34 0, transparent 35%), #09110e;
+}
+main {
+  width: min(1120px, calc(100% - 32px));
+  margin: auto;
+  padding: 48px 0 80px;
+}
+header,
+.section-title,
+.agent-head,
+.workflow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+h1 {
+  margin: 2px 0 28px;
+  font-size: clamp(2.5rem, 7vw, 5.5rem);
+  letter-spacing: -0.06em;
+}
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+.eyebrow {
+  margin-bottom: 4px;
+  color: #8dd7a8;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.panel,
+.metrics article {
+  border: 1px solid #294537;
+  background: rgba(14, 29, 22, 0.86);
+  box-shadow: 0 18px 50px #0005;
+}
+.workflow {
+  min-height: 170px;
+  padding: 30px;
+  border-radius: 22px;
+}
+.workflow > p {
+  max-width: 42ch;
+  color: #afc4b6;
+}
+.connection,
+.badge {
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: #493b1a;
+  color: #f7d57d;
+  font-size: 0.78rem;
+  text-transform: capitalize;
+}
+.connection.live,
+.badge.running {
+  background: #174d31;
+  color: #8ef0b4;
+}
+.badge.blocked,
+.badge.failed {
+  background: #572827;
+  color: #ffaaa2;
+}
+.badge.completed {
+  background: #243d57;
+  color: #a8d5ff;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 18px 0 44px;
+}
+.metrics article {
+  padding: 22px;
+  border-radius: 16px;
+}
+.metrics span {
+  display: block;
+  font-size: 2rem;
+  font-weight: 700;
+}
+.metrics small,
+small,
+dt {
+  color: #87a291;
+}
+.agents {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 14px;
+}
+.agent {
+  padding: 22px;
+  border-radius: 18px;
+}
+.agent dl {
+  display: grid;
+  grid-template-columns: 55px 1fr;
+  gap: 7px 12px;
+}
+.agent dd {
+  margin: 0;
+}
+.empty {
+  color: #87a291;
+}
+@media (max-width: 650px) {
+  .metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .workflow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
