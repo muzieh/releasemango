@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implement Linear Ticket"
+  short_description: "Develop a ticket test-first in its worktree"
+  default_prompt: "Use $code-ticket to implement the selected Linear issue with red-green-refactor evidence."

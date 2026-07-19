@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Mango SDLC"
+  short_description: "Drive the next Linear ticket through delivery"
+  default_prompt: "Use $sdlc to select and deliver the next ready Release Mango ticket."

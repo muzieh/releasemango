@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan Linear Ticket"
+  short_description: "Validate readiness and write a development plan"
+  default_prompt: "Use $plan-ticket to validate the selected issue and prepare its implementation plan."

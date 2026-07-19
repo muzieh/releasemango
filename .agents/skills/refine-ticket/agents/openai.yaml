@@ -1,0 +1,4 @@
+interface:
+  display_name: "Refine Linear Ticket"
+  short_description: "Check readiness and refine acceptance criteria"
+  default_prompt: "Use $refine-ticket to make the selected Linear issue actionable and ready for development."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Linear Ticket"
+  short_description: "Review code and record an actionable verdict"
+  default_prompt: "Use $review-ticket to independently review the selected issue and pull request."
