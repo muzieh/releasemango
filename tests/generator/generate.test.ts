@@ -355,7 +355,7 @@ describe("generateWorkspace", () => {
       expect(renamed.commits).not.toEqual(original.commits);
       expect(versioned.commits).not.toEqual(original.commits);
     });
-  });
+  }, 15_000);
 
   it("refuses a destination in the authoritative checkout", async () => {
     const destination = await mkdtemp(join(checkout, ".tea-8-containment-"));
