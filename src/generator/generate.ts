@@ -377,18 +377,6 @@ export async function generateWorkspace(
     enter("copy");
     await cp(join(validated.fixture, "baseline"), staging, { recursive: true });
 
-    enter("git-initialization");
-    await git(staging, ["init", "--initial-branch=main"]);
-    await git(staging, ["config", "--local", "user.name", "Release Mango"]);
-    await git(staging, [
-      "config",
-      "--local",
-      "user.email",
-      "generator@releasemango.invalid",
-    ]);
-    await git(staging, ["config", "--local", "commit.gpgSign", "false"]);
-    await git(staging, ["config", "--local", "tag.gpgSign", "false"]);
-
     const metadataKey = createHash("sha256")
       .update(request.generatorVersion)
       .update("\0")
@@ -410,6 +398,13 @@ export async function generateWorkspace(
       const date = `${String(seconds + index * 60)} +0000`;
       return { ...identity, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date };
     };
+
+    enter("git-initialization");
+    await git(staging, ["init", "--initial-branch=main"]);
+    await git(staging, ["config", "--local", "user.name", identityName]);
+    await git(staging, ["config", "--local", "user.email", identityEmail]);
+    await git(staging, ["config", "--local", "commit.gpgSign", "false"]);
+    await git(staging, ["config", "--local", "tag.gpgSign", "false"]);
 
     enter("history");
     await git(staging, ["add", "-A"]);
@@ -520,6 +515,8 @@ export async function generateWorkspace(
       }
     }
     try {
+      if (request.failPublishAfterBackup)
+        throw new Error("Injected publication failure after backup.");
       await rename(staging, destination);
       staging = undefined;
     } catch (error) {

@@ -31,6 +31,8 @@ export interface GenerationRequest {
   readonly overwrite?: boolean;
   /** Test-only boundary used to prove phase cleanup and rollback. */
   readonly failAt?: GenerationPhase;
+  /** Test-only boundary used to prove replacement rollback after backup. */
+  readonly failPublishAfterBackup?: boolean;
 }
 
 export interface OwnershipManifest {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   cp,
   mkdtemp,
@@ -66,9 +67,27 @@ async function runGit(repository: string, args: string[]): Promise<string> {
   return result.stdout.trim();
 }
 
+async function directoryFingerprint(root: string): Promise<string> {
+  const hash = createHash("sha256");
+  const visit = async (path: string, prefix = ""): Promise<void> => {
+    for (const entry of (await readdir(path, { withFileTypes: true })).sort(
+      (left, right) => left.name.localeCompare(right.name),
+    )) {
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      hash.update(relativePath);
+      if (entry.isDirectory())
+        await visit(join(path, entry.name), relativePath);
+      else hash.update(await readFile(join(path, entry.name)));
+    }
+  };
+  await visit(root);
+  return hash.digest("hex");
+}
+
 describe("generateWorkspace", () => {
   it("generates deterministic non-linear history in paths containing spaces", async () => {
     await withTemporaryDirectory(async (parent) => {
+      const sourceBefore = await directoryFingerprint(fixture);
       const first = await generateWorkspace({
         scenario,
         fixture,
@@ -92,6 +111,57 @@ describe("generateWorkspace", () => {
       expect(
         await runGit(first.destination, ["rev-list", "--count", "--all"]),
       ).toBe("4");
+      const authoredIds = new Set(Object.values(first.commits));
+      expect(
+        (await runGit(first.destination, ["rev-list", "main"]))
+          .split("\n")
+          .filter((id) => authoredIds.has(id)),
+      ).toEqual([first.commits["semantic-a"]]);
+      for (const id of Object.keys(first.commits)) {
+        expect(
+          await runGit(first.destination, [
+            "show",
+            "-s",
+            "--format=%T",
+            first.commits[id] ?? "",
+          ]),
+        ).toBe(
+          await runGit(second.destination, [
+            "show",
+            "-s",
+            "--format=%T",
+            second.commits[id] ?? "",
+          ]),
+        );
+        expect(
+          await runGit(first.destination, [
+            "show",
+            "-s",
+            "--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI",
+            first.commits[id] ?? "",
+          ]),
+        ).toBe(
+          await runGit(second.destination, [
+            "show",
+            "-s",
+            "--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI",
+            second.commits[id] ?? "",
+          ]),
+        );
+      }
+      expect(
+        await runGit(first.destination, [
+          "show",
+          `${first.commits["semantic-a"] ?? ""}:app.mjs`,
+        ]),
+      ).toBe(
+        (
+          await readFile(
+            join(fixture, "changes", "semantic-a", "app.mjs"),
+            "utf8",
+          )
+        ).trim(),
+      );
       expect(
         await runGit(first.destination, [
           "show",
@@ -118,19 +188,60 @@ describe("generateWorkspace", () => {
           "commit.gpgSign",
         ]),
       ).toBe("false");
+      const authoredName = await runGit(first.destination, [
+        "show",
+        "-s",
+        "--format=%an",
+        first.commits["semantic-a"] ?? "",
+      ]);
+      const authoredEmail = await runGit(first.destination, [
+        "show",
+        "-s",
+        "--format=%ae",
+        first.commits["semantic-a"] ?? "",
+      ]);
       expect(
-        JSON.parse(
-          await readFile(
-            join(first.destination, OWNERSHIP_MANIFEST_PATH),
-            "utf8",
-          ),
+        await runGit(first.destination, ["config", "--local", "user.name"]),
+      ).toBe(authoredName);
+      expect(
+        await runGit(first.destination, ["config", "--local", "user.email"]),
+      ).toBe(authoredEmail);
+      expect(
+        await runGit(first.destination, [
+          "rev-parse",
+          "refs/releasemango/baselines/acceptance",
+        ]),
+      ).toBe(first.commits["semantic-a"]);
+      expect(
+        await runGit(first.destination, [
+          "rev-parse",
+          "refs/releasemango/baselines/production",
+        ]),
+      ).toBe(first.commits["semantic-resolution"]);
+      expect(
+        await runGit(first.destination, [
+          "rev-parse",
+          "refs/releasemango/commits/semantic-b",
+        ]),
+      ).toBe(first.commits["semantic-b"]);
+      const storedManifest: unknown = JSON.parse(
+        await readFile(
+          join(first.destination, OWNERSHIP_MANIFEST_PATH),
+          "utf8",
         ),
-      ).toMatchObject({
+      );
+      expect(storedManifest).toEqual(first.manifest);
+      expect(storedManifest).toMatchObject({
         scenarioId: "non-linear",
         workspaceInitialMain: "semantic-a",
+        generatedRefs: first.refs,
       });
+      expect(
+        await runGit(first.destination, ["ls-files", OWNERSHIP_MANIFEST_PATH]),
+      ).toBe("");
+      expect(await directoryFingerprint(fixture)).toBe(sourceBefore);
     });
-  });
+  }, 15_000);
 
   it("reports injected phases and leaves no first-generation destination", async () => {
     await withTemporaryDirectory(async (parent) => {
@@ -281,6 +392,7 @@ describe("generateWorkspace", () => {
 
   it("cleans staging for an injected failure in every generation phase", async () => {
     await withTemporaryDirectory(async (parent) => {
+      const sourceBefore = await directoryFingerprint(fixture);
       for (const phase of [
         "validation",
         "staging",
@@ -307,12 +419,14 @@ describe("generateWorkspace", () => {
             entry.startsWith(`.${phase}.staging-`),
           ),
         ).toEqual([]);
+        expect(await directoryFingerprint(fixture)).toBe(sourceBefore);
       }
     });
   });
 
   it("overwrites only a matching, repository-consistent owned workspace", async () => {
     await withTemporaryDirectory(async (parent) => {
+      const sourceBefore = await directoryFingerprint(fixture);
       const destination = join(parent, "replace");
       const first = await generateWorkspace({
         scenario,
@@ -329,6 +443,7 @@ describe("generateWorkspace", () => {
         overwrite: true,
       });
       expect(replacement.commits).toEqual(first.commits);
+      expect(await directoryFingerprint(fixture)).toBe(sourceBefore);
       await expect(
         readFile(join(destination, "player-note")),
       ).rejects.toBeDefined();
@@ -346,6 +461,50 @@ describe("generateWorkspace", () => {
           overwrite: true,
         }),
       ).rejects.toMatchObject({ phase: "validation" });
+    });
+  });
+
+  it("restores an owned repository when publication fails after backup", async () => {
+    await withTemporaryDirectory(async (parent) => {
+      const sourceBefore = await directoryFingerprint(fixture);
+      const destination = join(parent, "rollback");
+      const original = await generateWorkspace({
+        scenario,
+        fixture,
+        destination,
+        generatorVersion: "0.1.0",
+      });
+      const originalHead = await runGit(destination, ["rev-parse", "HEAD"]);
+      const originalMarker = await readFile(
+        join(destination, OWNERSHIP_MANIFEST_PATH),
+        "utf8",
+      );
+      await expect(
+        generateWorkspace({
+          scenario,
+          fixture,
+          destination,
+          generatorVersion: "0.1.0",
+          overwrite: true,
+          failPublishAfterBackup: true,
+        }),
+      ).rejects.toMatchObject({ phase: "publish" });
+      expect(await runGit(destination, ["rev-parse", "HEAD"])).toBe(
+        originalHead,
+      );
+      expect(await runGit(destination, ["status", "--porcelain"])).toBe("");
+      expect(
+        await readFile(join(destination, OWNERSHIP_MANIFEST_PATH), "utf8"),
+      ).toBe(originalMarker);
+      expect(await runGit(destination, ["rev-parse", "HEAD"])).toBe(
+        original.commits["semantic-a"],
+      );
+      expect(
+        (await readdir(parent)).filter(
+          (entry) => entry.includes(".staging-") || entry.includes(".backup-"),
+        ),
+      ).toEqual([]);
+      expect(await directoryFingerprint(fixture)).toBe(sourceBefore);
     });
   });
 });
