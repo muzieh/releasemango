@@ -1,2 +1,15 @@
-/** Public boundary for versioned scenario definitions and validation. */
-export type ScenarioDefinition = Readonly<Record<string, unknown>>;
+export { loadScenario, type ScenarioReader } from "./load.js";
+export { parseScenario } from "./parse.js";
+export type {
+  BehaviorCheck,
+  DiagnosticPath,
+  HintTier,
+  ReleasePolicy,
+  ScenarioCommit,
+  ScenarioDefinition,
+  ScenarioDiagnostic,
+  ScenarioMetadata,
+  ScenarioResult,
+  Ticket,
+  TicketStatus,
+} from "./model.js";
