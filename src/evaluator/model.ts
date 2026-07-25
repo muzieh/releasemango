@@ -54,3 +54,18 @@ export interface ProductionEvaluationResult extends EvaluationResult {
   readonly baseline: "refs/releasemango/baselines/production";
   readonly tickets: readonly string[];
 }
+
+export type AcceptanceEvaluationRequest = Omit<
+  EvaluationRequest,
+  "branch" | "baseline"
+> & {
+  readonly judgingBundle: string;
+};
+
+export interface AcceptanceEvaluationResult extends EvaluationResult {
+  readonly branch: "release/acceptance";
+  readonly baseline: "refs/releasemango/baselines/acceptance";
+  readonly tickets: readonly string[];
+  readonly requiredChecks: readonly string[];
+  readonly forbiddenChecks: readonly string[];
+}

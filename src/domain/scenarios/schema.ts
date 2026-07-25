@@ -6,6 +6,8 @@ const nonEmpty = z.string().trim().min(1);
 const releasePolicySchema = z.strictObject({
   baseline: identifier,
   tickets: z.array(identifier).min(1),
+  requiredChecks: z.array(identifier),
+  forbiddenChecks: z.array(identifier),
 });
 
 const checkSchema = z.strictObject({

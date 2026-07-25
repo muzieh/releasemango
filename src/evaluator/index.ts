@@ -1,5 +1,10 @@
 export { evaluateBranch } from "./evaluate.js";
 export {
+  evaluateAcceptanceRelease,
+  ACCEPTANCE_BASELINE,
+  ACCEPTANCE_BRANCH,
+} from "./acceptance.js";
+export {
   evaluateProductionRelease,
   PRODUCTION_BASELINE,
   PRODUCTION_BRANCH,
@@ -13,6 +18,8 @@ export {
   type EvaluationCheckResult,
   type EvaluationRequest,
   type EvaluationResult,
+  type AcceptanceEvaluationRequest,
+  type AcceptanceEvaluationResult,
   type ProductionEvaluationRequest,
   type ProductionEvaluationResult,
 } from "./model.js";

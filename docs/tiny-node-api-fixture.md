@@ -32,6 +32,15 @@ compatibility inputs for TEA-8 and TEA-14.
 `json-helper`; and `semantic-resolution` requires both semantic units.
 Acceptance and production exclude `forbidden-debug`.
 
+## Trusted judging bundle
+
+`judging/` is external generator source and is never copied into the player's
+tracked tree. The ownership manifest records the bundle directory identity and a
+deterministic SHA-256 fingerprint of all names and bytes. Acceptance evaluation
+resolves available relative check assets against this directory, rejects
+symlinks and path escapes, and fails before executing a check when the bundle is
+missing or its fingerprint differs.
+
 ## Representation contract
 
 - Baseline and every state are copied into a fresh OS temporary directory.

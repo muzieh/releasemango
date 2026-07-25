@@ -421,8 +421,18 @@ function scenarioFixture() {
         { id: "c3", ticket: "TEA-3", message: "three", dependsOn: ["c2"] },
       ],
       releases: {
-        acceptance: { baseline: "c1", tickets: ["TEA-1"] },
-        production: { baseline: "c3", tickets: ["TEA-2", "TEA-3"] },
+        acceptance: {
+          baseline: "c1",
+          tickets: ["TEA-1"],
+          requiredChecks: [],
+          forbiddenChecks: [],
+        },
+        production: {
+          baseline: "c3",
+          tickets: ["TEA-2", "TEA-3"],
+          requiredChecks: behaviorIds.slice(0, 3),
+          forbiddenChecks: behaviorIds.slice(3),
+        },
       },
       checks: { required, forbidden },
       hints: [{ tier: 1, text: "Fix it" }],

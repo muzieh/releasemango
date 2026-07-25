@@ -58,8 +58,18 @@ describe("branch evaluator", () => {
           tickets: [{ id: "T-1", title: "Ticket", status: "done" }],
           commits: [{ id: "c1", ticket: "T-1", message: "x", dependsOn: [] }],
           releases: {
-            acceptance: { baseline: "c1", tickets: ["T-1"] },
-            production: { baseline: "c1", tickets: ["T-1"] },
+            acceptance: {
+              baseline: "c1",
+              tickets: ["T-1"],
+              requiredChecks: [],
+              forbiddenChecks: [],
+            },
+            production: {
+              baseline: "c1",
+              tickets: ["T-1"],
+              requiredChecks: [],
+              forbiddenChecks: [],
+            },
           },
           checks: {
             required: [
@@ -120,8 +130,18 @@ describe("branch evaluator", () => {
           tickets: [{ id: "T-1", title: "Ticket", status: "done" }],
           commits: [{ id: "c1", ticket: "T-1", message: "x", dependsOn: [] }],
           releases: {
-            acceptance: { baseline: "c1", tickets: ["T-1"] },
-            production: { baseline: "c1", tickets: ["T-1"] },
+            acceptance: {
+              baseline: "c1",
+              tickets: ["T-1"],
+              requiredChecks: [],
+              forbiddenChecks: [],
+            },
+            production: {
+              baseline: "c1",
+              tickets: ["T-1"],
+              requiredChecks: [],
+              forbiddenChecks: [],
+            },
           },
           checks: { required: [], forbidden: [] },
           hints: [{ tier: 1, text: "Fix it" }],
@@ -497,8 +517,18 @@ function scenarioFor(
       tickets: [{ id: "T-1", title: "Ticket", status: "done" }],
       commits: [{ id: "c1", ticket: "T-1", message: "x", dependsOn: [] }],
       releases: {
-        acceptance: { baseline: "c1", tickets: ["T-1"] },
-        production: { baseline: "c1", tickets: ["T-1"] },
+        acceptance: {
+          baseline: "c1",
+          tickets: ["T-1"],
+          requiredChecks: [],
+          forbiddenChecks: [],
+        },
+        production: {
+          baseline: "c1",
+          tickets: ["T-1"],
+          requiredChecks: [],
+          forbiddenChecks: [],
+        },
       },
       checks: { required, forbidden },
       hints: [{ tier: 1, text: "Fix it" }],

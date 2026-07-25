@@ -111,6 +111,7 @@ const identityFields = (manifest: OwnershipManifest) => ({
   seed: manifest.seed,
   generatorVersion: manifest.generatorVersion,
   fixtureIdentity: manifest.fixtureIdentity,
+  judgingBundle: manifest.judgingBundle,
   workspaceInitialMain: manifest.workspaceInitialMain,
 });
 
@@ -153,7 +154,13 @@ async function validateOwnedDestination(
     if (typeof value[field] !== "string" || value[field] === "")
       throw new Error(`Ownership manifest field '${field}' is invalid.`);
   if (
-    value.schemaVersion !== 1 ||
+    value.schemaVersion !== 2 ||
+    value.judgingBundle === null ||
+    typeof value.judgingBundle !== "object" ||
+    typeof (value.judgingBundle as Record<string, unknown>).identity !==
+      "string" ||
+    typeof (value.judgingBundle as Record<string, unknown>).integrity !==
+      "string" ||
     typeof value.seed !== "number" ||
     !Number.isSafeInteger(value.seed) ||
     value.generatedRefs === null ||
@@ -328,12 +335,16 @@ export async function generateWorkspace(
       );
     });
     const intended: OwnershipManifest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       scenarioId: request.scenario.metadata.id,
       seed: validated.seed,
       generatorVersion: request.generatorVersion,
       fixture: basename(validated.fixture),
       fixtureIdentity: validated.fixtureIdentity,
+      judgingBundle: {
+        identity: basename(validated.fixture),
+        integrity: validated.fixtureIdentity,
+      },
       workspaceInitialMain: request.scenario.workspace.initialMain,
       generatedRefs: {},
     };

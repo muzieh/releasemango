@@ -31,9 +31,13 @@ releases:
   acceptance:
     baseline: commit-a
     tickets: [TEA-101]
+    requiredChecks: [tests, typecheck]
+    forbiddenChecks: [no-debug-log]
   production:
     baseline: commit-b
     tickets: [TEA-101, TEA-102]
+    requiredChecks: [typecheck]
+    forbiddenChecks: []
 checks:
   required:
     - id: typecheck

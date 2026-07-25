@@ -30,15 +30,53 @@ describe("parseScenario", () => {
     expect(result.value.releases.acceptance).toEqual({
       baseline: "commit-a",
       tickets: ["TEA-101"],
+      requiredChecks: ["tests", "typecheck"],
+      forbiddenChecks: ["no-debug-log"],
     });
     expect(result.value.releases.production).toEqual({
       baseline: "commit-b",
       tickets: ["TEA-101", "TEA-102"],
+      requiredChecks: ["typecheck"],
+      forbiddenChecks: [],
     });
     expect(Object.isFrozen(result.value)).toBe(true);
     expect(Object.isFrozen(result.value.commits)).toBe(true);
     expect(Object.isFrozen(result.value.commits[0]?.dependsOn)).toBe(true);
   });
+
+  it.each([
+    [
+      "unknown",
+      "requiredChecks: [tests, typecheck]",
+      "requiredChecks: [missing]",
+      "release.check-not-found",
+      ["releases", "acceptance", "requiredChecks", 0],
+    ],
+    [
+      "duplicate",
+      "requiredChecks: [tests, typecheck]",
+      "requiredChecks: [tests, tests]",
+      "release.duplicate-check",
+      ["releases", "acceptance", "requiredChecks", 1],
+    ],
+    [
+      "contradictory",
+      "forbiddenChecks: [no-debug-log]",
+      "forbiddenChecks: [tests]",
+      "release.contradictory-check",
+      ["releases", "acceptance", "forbiddenChecks", 0],
+    ],
+  ])(
+    "rejects %s release check references",
+    (_name, search, replacement, code, path) => {
+      const result = parseScenario(replace(search, replacement));
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({ code, path }),
+      );
+    },
+  );
 
   it.each([
     [
