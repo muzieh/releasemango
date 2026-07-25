@@ -46,10 +46,17 @@ const scenario: ScenarioDefinition = {
     },
   ],
   releases: {
-    acceptance: { baseline: "semantic-a", tickets: ["TEA-A"] },
+    acceptance: {
+      baseline: "semantic-a",
+      tickets: ["TEA-A"],
+      requiredChecks: [],
+      forbiddenChecks: [],
+    },
     production: {
       baseline: "semantic-resolution",
       tickets: ["TEA-A", "TEA-B", "TEA-R"],
+      requiredChecks: [],
+      forbiddenChecks: [],
     },
   },
   checks: { required: [], forbidden: [] },
@@ -265,12 +272,20 @@ describe("generateWorkspace", () => {
       );
       expect(storedManifest).toEqual(first.manifest);
       expect(storedManifest).toMatchObject({
+        schemaVersion: 2,
         scenarioId: "non-linear",
         workspaceInitialMain: "semantic-a",
+        judgingBundle: {
+          identity: "tiny-node-api",
+          integrity: first.manifest.fixtureIdentity,
+        },
         generatedRefs: first.refs,
       });
       expect(
         await runGit(first.destination, ["ls-files", OWNERSHIP_MANIFEST_PATH]),
+      ).toBe("");
+      expect(
+        await runGit(first.destination, ["ls-files", "judging/check.mjs"]),
       ).toBe("");
       expect(await directoryFingerprint(fixture)).toBe(sourceBefore);
     });

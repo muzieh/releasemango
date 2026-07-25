@@ -36,12 +36,16 @@ export interface GenerationRequest {
 }
 
 export interface OwnershipManifest {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly scenarioId: string;
   readonly seed: number;
   readonly generatorVersion: string;
   readonly fixture: string;
   readonly fixtureIdentity: string;
+  readonly judgingBundle: {
+    readonly identity: string;
+    readonly integrity: string;
+  };
   readonly workspaceInitialMain: string;
   readonly generatedRefs: Readonly<Record<string, string>>;
 }

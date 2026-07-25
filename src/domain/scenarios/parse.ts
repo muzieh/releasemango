@@ -122,6 +122,12 @@ const validateReferences = (
     const ticketIds = parts.tickets
       ? new Set(parts.tickets.map(({ id }) => id))
       : undefined;
+    const checkIds = parts.checks
+      ? {
+          requiredChecks: new Set(parts.checks.required.map(({ id }) => id)),
+          forbiddenChecks: new Set(parts.checks.forbidden.map(({ id }) => id)),
+        }
+      : undefined;
     (["acceptance", "production"] as const).forEach((name) => {
       const policy = parts.releases?.[name];
       if (!policy) return;
@@ -143,6 +149,41 @@ const validateReferences = (
             ),
           );
       });
+      const required = new Set<string>();
+      const forbidden = new Set<string>();
+      for (const [kind, ids, seen] of [
+        ["requiredChecks", policy.requiredChecks, required],
+        ["forbiddenChecks", policy.forbiddenChecks, forbidden],
+      ] as const) {
+        ids.forEach((id, index) => {
+          const path = ["releases", name, kind, index] as const;
+          if (checkIds && !checkIds[kind].has(id))
+            diagnostics.push(
+              diagnostic(
+                "release.check-not-found",
+                `Release check '${id}' does not exist.`,
+                path,
+              ),
+            );
+          if (seen.has(id))
+            diagnostics.push(
+              diagnostic(
+                "release.duplicate-check",
+                `Release check '${id}' is declared more than once.`,
+                path,
+              ),
+            );
+          if (kind === "forbiddenChecks" && required.has(id))
+            diagnostics.push(
+              diagnostic(
+                "release.contradictory-check",
+                `Release check '${id}' cannot be both required and forbidden.`,
+                path,
+              ),
+            );
+          seen.add(id);
+        });
+      }
     });
   }
 };

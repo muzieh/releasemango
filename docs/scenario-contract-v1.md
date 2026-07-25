@@ -20,8 +20,12 @@ The canonical minimal example is
   reference, message, and `dependsOn` commit IDs. Dependencies must exist and be
   acyclic.
 - `releases.acceptance` and `releases.production`: each names an existing commit
-  `baseline` and a non-empty list of existing ticket IDs. Their baselines and
-  scopes are independent and may differ.
+  `baseline`, a non-empty list of existing ticket IDs, and authored-order
+  `requiredChecks` and `forbiddenChecks` ID arrays. Every check ID must name a
+  global check, may occur only once per release, and cannot occur in both arrays
+  for the same release. The two releases may declare different sets. These
+  arrays are the sole source of check applicability; tickets, statuses, commits,
+  and the other release never imply applicability.
 - `checks.required` and `checks.forbidden`: authored-order declarative checks
   with a unique non-empty `id`, a single executable `command`, and an explicit
   `args` array. Commands may contain letters, digits, `_`, `.`, `/`, and `-`;
@@ -35,9 +39,10 @@ The canonical minimal example is
 
 ## Ordering and immutability
 
-Commit, required-check, forbidden-check, and hint arrays retain YAML order. A
-successful parse returns a deeply frozen model, including nested objects and
-arrays.
+Commit, global check, release check-reference, and hint arrays retain YAML
+order. Evaluation runs each release's required references followed by its
+forbidden references. A successful parse returns a deeply frozen model,
+including nested objects and arrays.
 
 ## Diagnostics
 
@@ -51,7 +56,9 @@ families are:
 - `commit.duplicate-id`, `commit.ticket-not-found`,
   `commit.dependency-not-found`, and `commit.dependency-cycle`;
 - `workspace.initial-main-not-found`;
-- `release.baseline-not-found` and `release.ticket-not-found`;
+- `release.baseline-not-found`, `release.ticket-not-found`,
+  `release.check-not-found`, `release.duplicate-check`, and
+  `release.contradictory-check`;
 - `check.duplicate-id` and `check.unsafe-command`;
 - `hint.invalid-tier`;
 - `scoring.negative-weight` and `scoring.invalid-total`;

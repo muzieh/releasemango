@@ -25,6 +25,7 @@ import {
 import { execa } from "execa";
 import { fileURLToPath } from "node:url";
 import type { ScenarioCommit } from "../domain/scenarios/index.js";
+import { fingerprintAssetBundle } from "./fingerprint.js";
 import {
   GenerationError,
   OWNERSHIP_MANIFEST_PATH,
@@ -86,31 +87,13 @@ async function canonicalTarget(path: string): Promise<string> {
   return resolve(canonicalAncestor, relative(ancestor, path));
 }
 
-async function fingerprint(root: string): Promise<string> {
-  const hash = createHash("sha256");
-  const visit = async (path: string, prefix = ""): Promise<void> => {
-    for (const entry of (await readdir(path, { withFileTypes: true })).sort(
-      (a, b) => a.name.localeCompare(b.name),
-    )) {
-      const relativeName = prefix ? `${prefix}/${entry.name}` : entry.name;
-      hash.update(relativeName);
-      if (entry.isSymbolicLink())
-        throw new Error(`Fixture symlink is not allowed: ${relativeName}`);
-      if (entry.isDirectory())
-        await visit(join(path, entry.name), relativeName);
-      else hash.update(await readFile(join(path, entry.name)));
-    }
-  };
-  await visit(root);
-  return hash.digest("hex");
-}
-
 const identityFields = (manifest: OwnershipManifest) => ({
   schemaVersion: manifest.schemaVersion,
   scenarioId: manifest.scenarioId,
   seed: manifest.seed,
   generatorVersion: manifest.generatorVersion,
   fixtureIdentity: manifest.fixtureIdentity,
+  judgingBundle: manifest.judgingBundle,
   workspaceInitialMain: manifest.workspaceInitialMain,
 });
 
@@ -153,7 +136,13 @@ async function validateOwnedDestination(
     if (typeof value[field] !== "string" || value[field] === "")
       throw new Error(`Ownership manifest field '${field}' is invalid.`);
   if (
-    value.schemaVersion !== 1 ||
+    value.schemaVersion !== 2 ||
+    value.judgingBundle === null ||
+    typeof value.judgingBundle !== "object" ||
+    typeof (value.judgingBundle as Record<string, unknown>).identity !==
+      "string" ||
+    typeof (value.judgingBundle as Record<string, unknown>).integrity !==
+      "string" ||
     typeof value.seed !== "number" ||
     !Number.isSafeInteger(value.seed) ||
     value.generatedRefs === null ||
@@ -302,7 +291,7 @@ async function validate(request: GenerationRequest): Promise<{
   return {
     fixture,
     manifest,
-    fixtureIdentity: await fingerprint(fixture),
+    fixtureIdentity: await fingerprintAssetBundle(fixture),
     seed,
   };
 }
@@ -328,12 +317,16 @@ export async function generateWorkspace(
       );
     });
     const intended: OwnershipManifest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       scenarioId: request.scenario.metadata.id,
       seed: validated.seed,
       generatorVersion: request.generatorVersion,
       fixture: basename(validated.fixture),
       fixtureIdentity: validated.fixtureIdentity,
+      judgingBundle: {
+        identity: basename(validated.fixture),
+        integrity: validated.fixtureIdentity,
+      },
       workspaceInitialMain: request.scenario.workspace.initialMain,
       generatedRefs: {},
     };

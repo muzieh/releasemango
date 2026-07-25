@@ -37,6 +37,8 @@ export interface ScenarioCommit {
 export interface ReleasePolicy {
   readonly baseline: string;
   readonly tickets: readonly string[];
+  readonly requiredChecks: readonly string[];
+  readonly forbiddenChecks: readonly string[];
 }
 
 export interface BehaviorCheck {

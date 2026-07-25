@@ -42,6 +42,8 @@ export interface EvaluationRequest {
   readonly git?: GitAdapter;
   readonly now?: () => number;
   readonly createTemporaryDirectory?: () => Promise<string>;
+  /** Test-only boundary for deterministic isolated-worktree status failures. */
+  readonly createWorktreeGitAdapter?: (repository: string) => GitAdapter;
 }
 
 export type ProductionEvaluationRequest = Omit<
@@ -53,4 +55,19 @@ export interface ProductionEvaluationResult extends EvaluationResult {
   readonly branch: "release/production";
   readonly baseline: "refs/releasemango/baselines/production";
   readonly tickets: readonly string[];
+}
+
+export type AcceptanceEvaluationRequest = Omit<
+  EvaluationRequest,
+  "branch" | "baseline"
+> & {
+  readonly judgingBundle: string;
+};
+
+export interface AcceptanceEvaluationResult extends EvaluationResult {
+  readonly branch: "release/acceptance";
+  readonly baseline: "refs/releasemango/baselines/acceptance";
+  readonly tickets: readonly string[];
+  readonly requiredChecks: readonly string[];
+  readonly forbiddenChecks: readonly string[];
 }
