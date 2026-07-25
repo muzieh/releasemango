@@ -34,29 +34,45 @@ describe("process runner", () => {
   });
 
   it("distinguishes disallowed environment, spawn, timeout, and cancellation", async () => {
-    const runner = createProcessRunner({ allowedEnvironment: [] });
+    const runner = createProcessRunner({
+      allowedEnvironment: ["TEA_SECRET"],
+    });
     const cwd = process.cwd();
-    await expect(
-      runner.run({
-        executable: process.execPath,
-        args: [],
-        cwd,
-        environment: { SECRET: "hidden" },
-      }),
-    ).resolves.toMatchObject({ kind: "adapter-failed", exitCode: null });
+    const adapterFailure = await runner.run({
+      executable: process.execPath,
+      args: [],
+      cwd,
+      environment: { DISALLOWED_SECRET: "hidden" },
+    });
+    expect(adapterFailure).toMatchObject({
+      kind: "adapter-failed",
+      exitCode: null,
+      stdout: "",
+      stderr: "",
+      termination: "adapter-failure",
+    });
+    expect(JSON.stringify(adapterFailure)).not.toContain("DISALLOWED_SECRET");
+    expect(JSON.stringify(adapterFailure)).not.toContain("hidden");
     await expect(
       runner.run({ executable: "missing-tea-executable", args: [], cwd }),
-    ).resolves.toMatchObject({ kind: "spawn-failed", exitCode: null });
+    ).resolves.toMatchObject({
+      kind: "spawn-failed",
+      exitCode: null,
+      stdout: "",
+      stderr: "",
+      termination: "spawn-failure",
+    });
     await withTemporaryDirectory(async (directory) => {
       const timeoutPidPath = join(directory, "timeout.pid");
       const timeout = runner.run({
         executable: process.execPath,
         args: [
           "-e",
-          "require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)",
+          "const fs = require('node:fs'); fs.writeSync(1, 'before timeout\\n'); fs.writeSync(2, 'timeout warning\\n'); fs.writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)",
           timeoutPidPath,
         ],
         cwd,
+        environment: { TEA_SECRET: "timeout-secret-value" },
         timeoutMs: 1_000,
       });
       const timeoutPid = await waitForPid(timeoutPidPath);
@@ -64,7 +80,14 @@ describe("process runner", () => {
       expect(timeoutResult).toMatchObject({
         kind: "timed-out",
         exitCode: null,
+        stdout: "before timeout",
+        stderr: "timeout warning",
+        termination: "timeout",
       });
+      expect(JSON.stringify(timeoutResult)).not.toContain("TEA_SECRET");
+      expect(JSON.stringify(timeoutResult)).not.toContain(
+        "timeout-secret-value",
+      );
       await expectProcessGone(timeoutPid);
 
       const cancellationPidPath = join(directory, "cancellation.pid");
@@ -73,10 +96,11 @@ describe("process runner", () => {
         executable: process.execPath,
         args: [
           "-e",
-          "require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)",
+          "const fs = require('node:fs'); fs.writeSync(1, 'before cancellation\\n'); fs.writeSync(2, 'cancellation warning\\n'); fs.writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)",
           cancellationPidPath,
         ],
         cwd,
+        environment: { TEA_SECRET: "cancellation-secret-value" },
         signal: controller.signal,
       });
       const cancellationPid = await waitForPid(cancellationPidPath);
@@ -84,7 +108,15 @@ describe("process runner", () => {
       await expect(cancellation).resolves.toMatchObject({
         kind: "cancelled",
         exitCode: null,
+        stdout: "before cancellation",
+        stderr: "cancellation warning",
+        termination: "cancellation",
       });
+      const cancellationResult = await cancellation;
+      expect(JSON.stringify(cancellationResult)).not.toContain("TEA_SECRET");
+      expect(JSON.stringify(cancellationResult)).not.toContain(
+        "cancellation-secret-value",
+      );
       await expectProcessGone(cancellationPid);
     });
   });

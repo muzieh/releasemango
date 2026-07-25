@@ -27,6 +27,10 @@ export type ProcessResult =
   | (ProcessRecord & {
       readonly kind:
         "adapter-failed" | "spawn-failed" | "timed-out" | "cancelled";
+      readonly stdout: string;
+      readonly stderr: string;
+      readonly termination:
+        "adapter-failure" | "spawn-failure" | "timeout" | "cancellation";
       readonly message: string;
     });
 
@@ -58,6 +62,9 @@ export function createProcessRunner(
           ...identity,
           kind: "adapter-failed",
           exitCode: null,
+          stdout: "",
+          stderr: "",
+          termination: "adapter-failure",
           message: "Environment override is not allowed",
         });
       }
@@ -87,6 +94,9 @@ export function createProcessRunner(
             ...identity,
             kind,
             exitCode: null,
+            stdout: failure.stdout,
+            stderr: failure.stderr,
+            termination: terminationFor(kind),
             message:
               kind === "cancelled"
                 ? "Process was cancelled"
@@ -116,6 +126,9 @@ export function createProcessRunner(
           ...identity,
           kind,
           exitCode: null,
+          stdout: failure.stdout,
+          stderr: failure.stderr,
+          termination: terminationFor(kind),
           message:
             kind === "cancelled"
               ? "Process was cancelled"
@@ -132,7 +145,38 @@ function asExecaFailure(error: unknown): {
   readonly code?: string;
   readonly timedOut?: boolean;
   readonly isCanceled?: boolean;
+  readonly stdout: string;
+  readonly stderr: string;
 } {
-  if (typeof error !== "object" || error === null) return {};
-  return error;
+  if (typeof error !== "object" || error === null) {
+    return { stdout: "", stderr: "" };
+  }
+  const failure = error as {
+    readonly code?: unknown;
+    readonly timedOut?: unknown;
+    readonly isCanceled?: unknown;
+    readonly stdout?: unknown;
+    readonly stderr?: unknown;
+  };
+  return {
+    ...(typeof failure.code === "string" ? { code: failure.code } : {}),
+    ...(typeof failure.timedOut === "boolean"
+      ? { timedOut: failure.timedOut }
+      : {}),
+    ...(typeof failure.isCanceled === "boolean"
+      ? { isCanceled: failure.isCanceled }
+      : {}),
+    stdout: typeof failure.stdout === "string" ? failure.stdout : "",
+    stderr: typeof failure.stderr === "string" ? failure.stderr : "",
+  };
+}
+
+function terminationFor(
+  kind: "spawn-failed" | "timed-out" | "cancelled",
+): "spawn-failure" | "timeout" | "cancellation" {
+  return kind === "timed-out"
+    ? "timeout"
+    : kind === "cancelled"
+      ? "cancellation"
+      : "spawn-failure";
 }
