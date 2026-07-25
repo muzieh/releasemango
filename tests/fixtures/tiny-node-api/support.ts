@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 
 const fixtureRoot = new URL(
   "../../../fixtures/tiny-node-api/",
@@ -16,7 +17,7 @@ export interface State {
   checks: string[];
 }
 
-interface Manifest {
+export interface Manifest {
   units: Record<string, { requires: string[]; files: string[] }>;
   states: Record<string, State>;
 }
@@ -27,21 +28,55 @@ export async function loadManifest(): Promise<Manifest> {
   ) as Manifest;
 }
 
-export async function materialize(units: string[]): Promise<string> {
-  const manifest = await loadManifest();
-  const root = await mkdtemp(join(tmpdir(), "tiny-node-api-"));
-  await cp(new URL("baseline/", fixtureRoot), root, { recursive: true });
-  for (const unit of units) {
-    const definition = manifest.units[unit];
-    if (definition === undefined) throw new Error(`unknown unit: ${unit}`);
-    for (const file of definition.files) {
-      await cp(
-        new URL(`changes/${unit}/${file}`, fixtureRoot),
-        join(root, file),
-      );
-    }
+function resolveInside(
+  parent: string,
+  candidate: string,
+  label: string,
+): string {
+  if (isAbsolute(candidate) || candidate.includes("\\")) {
+    throw new Error(`unsafe ${label}: ${candidate}`);
   }
-  return root;
+  const resolved = resolve(parent, candidate);
+  const fromParent = relative(parent, resolved);
+  if (
+    fromParent === "" ||
+    fromParent === ".." ||
+    fromParent.startsWith(`..${sep}`) ||
+    isAbsolute(fromParent)
+  ) {
+    throw new Error(`unsafe ${label}: ${candidate}`);
+  }
+  return resolved;
+}
+
+export async function materialize(
+  units: string[],
+  suppliedManifest?: Manifest,
+  temporaryParent = tmpdir(),
+): Promise<string> {
+  const manifest = suppliedManifest ?? (await loadManifest());
+  const root = await mkdtemp(join(temporaryParent, "tiny-node-api-"));
+  try {
+    await cp(new URL("baseline/", fixtureRoot), root, { recursive: true });
+    const changesRoot = fileURLToPath(new URL("changes/", fixtureRoot));
+    for (const unit of units) {
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(unit)) {
+        throw new Error(`unsafe overlay unit: ${unit}`);
+      }
+      const definition = manifest.units[unit];
+      if (definition === undefined) throw new Error(`unknown unit: ${unit}`);
+      const unitRoot = resolveInside(changesRoot, unit, "overlay unit");
+      for (const file of definition.files) {
+        const source = resolveInside(unitRoot, file, "overlay file");
+        const destination = resolveInside(root, file, "overlay file");
+        await cp(source, destination);
+      }
+    }
+    return root;
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 export async function start(

@@ -1,3 +1,7 @@
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -29,6 +33,27 @@ describe("tiny Node API fixture", () => {
       "semantic-b",
       "semantic-resolution",
     ]);
+  });
+
+  it("rejects an escaping overlay path and cleans its temporary directory", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "tiny-node-api-boundary-"));
+    try {
+      await expect(
+        materialize(
+          ["escape"],
+          {
+            units: {
+              escape: { requires: [], files: ["../outside.mjs"] },
+            },
+            states: {},
+          },
+          parent,
+        ),
+      ).rejects.toThrow("unsafe overlay file");
+      expect(await readdir(parent)).toEqual([]);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
   });
 
   const publicChecks: Record<
