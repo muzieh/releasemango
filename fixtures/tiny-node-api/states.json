@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "units": {
+    "single-greeting": { "requires": [], "files": ["app.mjs"] },
+    "multi-route": { "requires": [], "files": ["app.mjs"] },
+    "multi-implementation": {
+      "requires": ["multi-route"],
+      "files": ["multi-response.mjs"]
+    },
+    "json-helper": { "requires": [], "files": ["json-response.mjs"] },
+    "dependent-feature": { "requires": ["json-helper"], "files": ["app.mjs"] },
+    "forbidden-debug": { "requires": [], "files": ["app.mjs"] },
+    "acceptance": { "requires": [], "files": ["app.mjs"] },
+    "production": { "requires": [], "files": ["app.mjs"] },
+    "semantic-a": { "requires": [], "files": ["app.mjs"] },
+    "semantic-b": { "requires": [], "files": ["app.mjs"] },
+    "semantic-resolution": {
+      "requires": ["semantic-a", "semantic-b"],
+      "files": ["app.mjs"]
+    }
+  },
+  "states": {
+    "baseline": { "units": [], "expect": "pass", "checks": ["health"] },
+    "single-greeting": {
+      "units": ["single-greeting"],
+      "expect": "pass",
+      "checks": ["greeting"]
+    },
+    "multi-route-only": {
+      "units": ["multi-route"],
+      "expect": "startup-failure",
+      "checks": ["missing-implementation"]
+    },
+    "multi-complete": {
+      "units": ["multi-route", "multi-implementation"],
+      "expect": "pass",
+      "checks": ["multi"]
+    },
+    "dependent-without-json-helper": {
+      "units": ["dependent-feature"],
+      "expect": "startup-failure",
+      "checks": ["missing-dependency"]
+    },
+    "dependent-complete": {
+      "units": ["json-helper", "dependent-feature"],
+      "expect": "pass",
+      "checks": ["shared"]
+    },
+    "forbidden-debug": {
+      "units": ["forbidden-debug"],
+      "expect": "negative-check-failure",
+      "checks": ["no-debug"]
+    },
+    "acceptance": {
+      "units": ["acceptance"],
+      "expect": "pass",
+      "checks": ["acceptance", "no-debug"]
+    },
+    "production": {
+      "units": ["production"],
+      "expect": "pass",
+      "checks": ["production", "no-debug"]
+    },
+    "semantic-a": {
+      "units": ["semantic-a"],
+      "expect": "pass",
+      "checks": ["semantic-a"]
+    },
+    "semantic-b": {
+      "units": ["semantic-b"],
+      "expect": "pass",
+      "checks": ["semantic-b"]
+    },
+    "semantic-resolution": {
+      "units": ["semantic-a", "semantic-b", "semantic-resolution"],
+      "expect": "pass",
+      "checks": ["semantic-resolution"]
+    }
+  }
+}
