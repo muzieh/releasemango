@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   cp,
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
@@ -100,6 +101,27 @@ describe("generateWorkspace", () => {
         destination: join(parent, "repo two"),
         generatorVersion: "0.1.0",
       });
+      const ambientTemplate = join(parent, "ambient-template");
+      await mkdir(join(ambientTemplate, "hooks"), { recursive: true });
+      await writeFile(
+        join(ambientTemplate, "hooks", "pre-commit"),
+        "#!/bin/sh\nexit 1\n",
+      );
+      await writeFile(join(ambientTemplate, "ambient-marker"), "must not copy");
+      const previousTemplate = process.env.GIT_TEMPLATE_DIR;
+      process.env.GIT_TEMPLATE_DIR = ambientTemplate;
+      const isolatedDestination = join(parent, "repo ambient");
+      try {
+        await generateWorkspace({
+          scenario,
+          fixture,
+          destination: isolatedDestination,
+          generatorVersion: "0.1.0",
+        });
+      } finally {
+        if (previousTemplate === undefined) delete process.env.GIT_TEMPLATE_DIR;
+        else process.env.GIT_TEMPLATE_DIR = previousTemplate;
+      }
       expect(first.commits).toEqual(second.commits);
       expect(first.refs).toEqual(second.refs);
       expect(await runGit(first.destination, ["status", "--porcelain"])).toBe(
@@ -181,6 +203,17 @@ describe("generateWorkspace", () => {
         ).split(" "),
       ).toEqual([first.commits["semantic-a"], first.commits["semantic-b"]]);
       expect(await runGit(first.destination, ["remote"])).toBe("");
+      expect(
+        await readdir(join(first.destination, ".git", "hooks")).catch(() => []),
+      ).toEqual([]);
+      expect(
+        await readdir(join(isolatedDestination, ".git", "hooks")).catch(
+          () => [],
+        ),
+      ).toEqual([]);
+      await expect(
+        readFile(join(isolatedDestination, ".git", "ambient-marker")),
+      ).rejects.toBeDefined();
       expect(
         await runGit(first.destination, [
           "config",

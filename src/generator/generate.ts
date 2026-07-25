@@ -400,7 +400,7 @@ export async function generateWorkspace(
     };
 
     enter("git-initialization");
-    await git(staging, ["init", "--initial-branch=main"]);
+    await git(staging, ["init", "--initial-branch=main", "--template="]);
     await git(staging, ["config", "--local", "user.name", identityName]);
     await git(staging, ["config", "--local", "user.email", identityEmail]);
     await git(staging, ["config", "--local", "commit.gpgSign", "false"]);
