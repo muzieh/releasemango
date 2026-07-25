@@ -35,6 +35,7 @@ interface MatrixCase {
   readonly status: "pass" | "fail";
   readonly failed?: readonly string[];
   readonly acceptanceAncestry?: boolean;
+  readonly alternativeHistory?: boolean;
 }
 
 interface State {
@@ -98,6 +99,7 @@ describe("production release evaluator", () => {
       name: "equivalent squashed reimplementation",
       state: valid,
       status: "pass",
+      alternativeHistory: true,
     },
   ];
 
@@ -108,7 +110,12 @@ describe("production release evaluator", () => {
           repository,
           entry.state,
           entry.acceptanceAncestry,
+          entry.alternativeHistory,
         );
+        if (entry.alternativeHistory) {
+          expect(setup.canonicalSolution).toBeDefined();
+          expect(setup.solution).not.toBe(setup.canonicalSolution);
+        }
         const before = await playerSnapshot(repository);
         const results = [];
         for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -284,6 +291,7 @@ async function createRepository(
   repository: string,
   state: State,
   acceptanceAncestry = false,
+  alternativeHistory = false,
 ) {
   const { git, root } = await createBase(repository);
   if (acceptanceAncestry) {
@@ -298,13 +306,34 @@ async function createRepository(
     expect((await git.updateRef(PRODUCTION_BASELINE, root)).ok).toBe(true);
     expect((await git.updateRef(PRODUCTION_BRANCH_REF, root)).ok).toBe(true);
   }
+  let canonicalSolution: string | undefined;
+  if (alternativeHistory) {
+    expect(
+      (await git.updateRef("refs/heads/canonical-solution", root)).ok,
+    ).toBe(true);
+    expect((await git.switchBranch("canonical-solution")).ok).toBe(true);
+    await writeFile(join(repository, "state.json"), JSON.stringify(state));
+    expect((await git.stage(["state.json"])).ok).toBe(true);
+    canonicalSolution = await commit(git, "observable production solution");
+    expect((await git.switchBranch("main")).ok).toBe(true);
+  }
   expect((await git.switchBranch(PRODUCTION_BRANCH)).ok).toBe(true);
-  await writeFile(join(repository, "state.json"), JSON.stringify(state));
+  await writeFile(
+    join(repository, "state.json"),
+    alternativeHistory
+      ? `${JSON.stringify(state, null, 2)}\n`
+      : JSON.stringify(state),
+  );
   expect((await git.stage(["state.json"])).ok).toBe(true);
-  await commit(git, "observable production solution");
+  const solution = await commit(
+    git,
+    alternativeHistory
+      ? "independent squashed production reimplementation"
+      : "observable production solution",
+  );
   expect((await git.switchBranch("main")).ok).toBe(true);
   await dirtyPlayerCheckout(repository);
-  return { git };
+  return { git, solution, canonicalSolution };
 }
 
 const PRODUCTION_BRANCH_REF = `refs/heads/${PRODUCTION_BRANCH}`;
