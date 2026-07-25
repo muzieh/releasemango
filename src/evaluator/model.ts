@@ -43,3 +43,14 @@ export interface EvaluationRequest {
   readonly now?: () => number;
   readonly createTemporaryDirectory?: () => Promise<string>;
 }
+
+export type ProductionEvaluationRequest = Omit<
+  EvaluationRequest,
+  "branch" | "baseline"
+>;
+
+export interface ProductionEvaluationResult extends EvaluationResult {
+  readonly branch: "release/production";
+  readonly baseline: "refs/releasemango/baselines/production";
+  readonly tickets: readonly string[];
+}

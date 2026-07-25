@@ -173,6 +173,37 @@ describe("branch evaluator", () => {
     });
   });
 
+  it("accepts an exact generated production baseline ref", async () => {
+    await withTemporaryDirectory(async (repository) => {
+      const { git, scenario } = await createRepository(repository);
+      const main = await git.resolveRef("refs/heads/main");
+      expect(main.ok).toBe(true);
+      if (!main.ok) return;
+      const runner = createProcessRunner();
+      const created = await runner.run({
+        executable: "git",
+        args: ["update-ref", "refs/releasemango/baselines/production", main.id],
+        cwd: repository,
+      });
+      expect(created.kind === "completed" && created.exitCode === 0).toBe(true);
+
+      const result = await evaluateBranch({
+        repository,
+        branch: "solution",
+        baseline: "refs/releasemango/baselines/production",
+        scenario,
+      });
+
+      expect(result.status).toBe("pass");
+      expect(result.checks).toContainEqual(
+        expect.objectContaining({
+          id: "repository.ancestry",
+          status: "pass",
+        }),
+      );
+    });
+  });
+
   it("reports a missing exact baseline and preserves ancestry cancellation", async () => {
     await withTemporaryDirectory(async (repository) => {
       const { git, scenario } = await createRepository(repository);

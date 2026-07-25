@@ -356,7 +356,9 @@ function isExactNamedRef(value: string): boolean {
     ? "refs/heads/"
     : value.startsWith("refs/tags/")
       ? "refs/tags/"
-      : undefined;
+      : value.startsWith("refs/releasemango/")
+        ? "refs/releasemango/"
+        : undefined;
   return prefix !== undefined && isExactBranchName(value.slice(prefix.length));
 }
 
