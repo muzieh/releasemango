@@ -11,6 +11,11 @@ export interface GitAdapterOptions {
   readonly environment?: Readonly<Record<string, string>>;
 }
 
+export interface GitOperationOptions {
+  readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
+}
+
 export interface CommitIdentity {
   readonly name: string;
   readonly email: string;
@@ -49,7 +54,7 @@ export interface WorktreeEntry {
   readonly detached: boolean;
 }
 
-interface GitFailure {
+export interface GitFailure {
   readonly ok: false;
   readonly operation: string;
   readonly process: ProcessResult;
@@ -73,6 +78,7 @@ export interface GitAdapter {
   switchBranch(name: string): Promise<BasicResult>;
   resolveRef(
     ref: string,
+    options?: GitOperationOptions,
   ): Promise<{ readonly ok: true; readonly id: string } | GitFailure>;
   status(): Promise<
     { readonly ok: true; readonly entries: readonly StatusEntry[] } | GitFailure
@@ -84,6 +90,20 @@ export interface GitAdapter {
     | { readonly ok: true; readonly entries: readonly WorktreeEntry[] }
     | GitFailure
   >;
+  addDetachedWorktree(
+    path: string,
+    ref: string,
+    options?: GitOperationOptions,
+  ): Promise<BasicResult>;
+  removeWorktree(
+    path: string,
+    options?: GitOperationOptions,
+  ): Promise<BasicResult>;
+  isAncestor(
+    ancestor: string,
+    descendant: string,
+    options?: GitOperationOptions,
+  ): Promise<{ readonly ok: true; readonly isAncestor: boolean } | GitFailure>;
 }
 
 const gitEnvironmentKeys = [
@@ -110,12 +130,14 @@ export function createGitAdapter(
     operation: string,
     args: readonly string[],
     environment: Readonly<Record<string, string>> = {},
+    options: GitOperationOptions = {},
   ): Promise<CompletedProcess | GitFailure> {
     const request: ProcessRequest = {
       executable: "git",
       args,
       cwd: repository,
       environment: { ...baseEnvironment, ...environment },
+      ...options,
     };
     const process = await runner.run(request);
     if (process.kind === "completed" && process.exitCode === 0) return process;
@@ -171,8 +193,13 @@ export function createGitAdapter(
     switchBranch(name) {
       return basic("switch-branch", ["switch", name]);
     },
-    async resolveRef(ref) {
-      const result = await git("resolve-ref", ["rev-parse", "--verify", ref]);
+    async resolveRef(ref, options = {}) {
+      const result = await git(
+        "resolve-ref",
+        ["rev-parse", "--verify", ref],
+        {},
+        options,
+      );
       return isGitFailure(result)
         ? result
         : Object.freeze({ ok: true, id: result.stdout.trim() });
@@ -257,6 +284,44 @@ export function createGitAdapter(
             : entry,
         );
       return Object.freeze({ ok: true, entries: Object.freeze(entries) });
+    },
+    async addDetachedWorktree(path, ref, options = {}) {
+      const result = await git(
+        "add-detached-worktree",
+        ["worktree", "add", "--detach", "--", path, ref],
+        {},
+        options,
+      );
+      return isGitFailure(result) ? result : Object.freeze({ ok: true });
+    },
+    async removeWorktree(path, options = {}) {
+      const result = await git(
+        "remove-worktree",
+        ["worktree", "remove", "--force", "--", path],
+        {},
+        options,
+      );
+      return isGitFailure(result) ? result : Object.freeze({ ok: true });
+    },
+    async isAncestor(ancestor, descendant, options = {}) {
+      const process = await runner.run({
+        executable: "git",
+        args: ["merge-base", "--is-ancestor", ancestor, descendant],
+        cwd: repository,
+        environment: baseEnvironment,
+        ...options,
+      });
+      if (process.kind === "completed" && [0, 1].includes(process.exitCode)) {
+        return Object.freeze({
+          ok: true,
+          isAncestor: process.exitCode === 0,
+        });
+      }
+      return Object.freeze({
+        ok: false,
+        operation: "is-ancestor",
+        process,
+      });
     },
   };
 }

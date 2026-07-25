@@ -64,6 +64,18 @@ describe("Git adapter", () => {
         expect(ref.ok && ref.id).toBe(commit.id);
         const worktrees = await git.listWorktrees();
         expect(worktrees.ok && worktrees.entries[0]?.path).toBe(repository);
+        const detached = join(parent, `${name} detached`);
+        expect((await git.addDetachedWorktree(detached, commit.id)).ok).toBe(
+          true,
+        );
+        expect(await git.isAncestor(commit.id, "refs/heads/feature")).toEqual({
+          ok: true,
+          isAncestor: true,
+        });
+        expect(
+          await git.isAncestor("refs/heads/feature", `${commit.id}^`),
+        ).toMatchObject({ ok: false, operation: "is-ancestor" });
+        expect((await git.removeWorktree(detached)).ok).toBe(true);
       }
       expect(ids[0]).toBe(ids[1]);
     });

@@ -12,6 +12,8 @@ export {
   type CommitRequest,
   type GitAdapter,
   type GitAdapterOptions,
+  type GitFailure,
+  type GitOperationOptions,
   type LogEntry,
   type StatusEntry,
   type WorktreeEntry,
