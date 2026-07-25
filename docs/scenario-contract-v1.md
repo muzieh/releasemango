@@ -12,6 +12,8 @@ The canonical minimal example is
 
 - `metadata`: non-empty `id`, learner-facing `title`, and `description`.
 - `seed`: a non-negative integer used by later deterministic generation.
+- `workspace.initialMain`: required authored commit ID used as the exact
+  generated `main` tip. It is never inferred from ticket or release state.
 - `ticketStatuses`: status `id` and display `name` entries. IDs are unique.
 - `tickets`: unique `id`, `title`, and a `status` referencing `ticketStatuses`.
 - `commits`: authored-order commit definitions with unique `id`, ticket
@@ -48,6 +50,7 @@ families are:
   `ticket.status-not-found`;
 - `commit.duplicate-id`, `commit.ticket-not-found`,
   `commit.dependency-not-found`, and `commit.dependency-cycle`;
+- `workspace.initial-main-not-found`;
 - `release.baseline-not-found` and `release.ticket-not-found`;
 - `check.duplicate-id` and `check.unsafe-command`;
 - `hint.invalid-tier`;

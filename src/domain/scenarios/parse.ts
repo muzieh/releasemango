@@ -50,6 +50,7 @@ const duplicates = (
 };
 
 interface SemanticParts {
+  workspace: ScenarioV1Input["workspace"] | undefined;
   ticketStatuses: ScenarioV1Input["ticketStatuses"] | undefined;
   tickets: ScenarioV1Input["tickets"] | undefined;
   commits: ScenarioV1Input["commits"] | undefined;
@@ -63,6 +64,18 @@ const validateReferences = (
   parts: SemanticParts,
   diagnostics: MutableDiagnostic[],
 ): void => {
+  if (
+    parts.workspace &&
+    parts.commits &&
+    !parts.commits.some(({ id }) => id === parts.workspace?.initialMain)
+  )
+    diagnostics.push(
+      diagnostic(
+        "workspace.initial-main-not-found",
+        `Initial main commit '${parts.workspace.initialMain}' does not exist.`,
+        ["workspace", "initialMain"],
+      ),
+    );
   if (parts.ticketStatuses && parts.tickets) {
     const statusIds = new Set(parts.ticketStatuses.map(({ id }) => id));
     parts.tickets.forEach((ticket, index) => {
@@ -268,6 +281,9 @@ const validateSemantics = (parts: SemanticParts): MutableDiagnostic[] => {
 const safeSemanticParts = (input: unknown): SemanticParts => {
   const value = input !== null && typeof input === "object" ? input : {};
   const fields = value as Record<string, unknown>;
+  const workspace = scenarioV1Schema.shape.workspace.safeParse(
+    fields.workspace,
+  );
   const ticketStatuses = scenarioV1Schema.shape.ticketStatuses.safeParse(
     fields.ticketStatuses,
   );
@@ -278,6 +294,7 @@ const safeSemanticParts = (input: unknown): SemanticParts => {
   const hints = scenarioV1Schema.shape.hints.safeParse(fields.hints);
   const scoring = scenarioV1Schema.shape.scoring.safeParse(fields.scoring);
   return {
+    workspace: workspace.success ? workspace.data : undefined,
     ticketStatuses: ticketStatuses.success ? ticketStatuses.data : undefined,
     tickets: tickets.success ? tickets.data : undefined,
     commits: commits.success ? commits.data : undefined,
@@ -331,9 +348,11 @@ export const parseScenario = (
           diagnostic(
             "schema.invalid",
             issue.message,
-            issue.path.map((segment) =>
-              typeof segment === "symbol" ? String(segment) : segment,
-            ),
+            issue.path.length === 1 && issue.path[0] === "workspace"
+              ? ["workspace", "initialMain"]
+              : issue.path.map((segment) =>
+                  typeof segment === "symbol" ? String(segment) : segment,
+                ),
           ),
         ),
         ...semanticDiagnostics,

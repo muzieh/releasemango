@@ -16,6 +16,8 @@ describe("parseScenario", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.schemaVersion).toBe(1);
+    expect(result.value.workspace.initialMain).toBe("commit-a");
+    expect(Object.isFrozen(result.value.workspace)).toBe(true);
     expect(result.value.commits.map(({ id }) => id)).toEqual([
       "commit-b",
       "commit-a",
@@ -36,6 +38,26 @@ describe("parseScenario", () => {
     expect(Object.isFrozen(result.value)).toBe(true);
     expect(Object.isFrozen(result.value.commits)).toBe(true);
     expect(Object.isFrozen(result.value.commits[0]?.dependsOn)).toBe(true);
+  });
+
+  it.each([
+    [
+      "missing",
+      validYaml.replace("workspace:\n  initialMain: commit-a\n", ""),
+      "schema.invalid",
+    ],
+    [
+      "unknown",
+      replace("initialMain: commit-a", "initialMain: missing"),
+      "workspace.initial-main-not-found",
+    ],
+  ])("rejects %s workspace.initialMain", (_name, source, code) => {
+    const result = parseScenario(source);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code, path: ["workspace", "initialMain"] }),
+    );
   });
 
   it.each([

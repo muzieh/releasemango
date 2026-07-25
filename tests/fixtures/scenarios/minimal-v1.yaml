@@ -4,6 +4,8 @@ metadata:
   title: Minimal release exercise
   description: Practice selecting different acceptance and production releases.
 seed: 42
+workspace:
+  initialMain: commit-a
 ticketStatuses:
   - id: ready
     name: Ready

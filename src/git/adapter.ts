@@ -29,6 +29,16 @@ export interface CommitRequest {
   readonly committedAt: string;
 }
 
+export interface TreeCommitRequest extends CommitRequest {
+  readonly tree: string;
+  readonly parents: readonly string[];
+}
+
+export interface RefEntry {
+  readonly name: string;
+  readonly id: string;
+}
+
 export interface StatusEntry {
   readonly path: string;
   readonly originalPath?: string;
@@ -74,6 +84,16 @@ export interface GitAdapter {
   commit(
     request: CommitRequest,
   ): Promise<{ readonly ok: true; readonly id: string } | GitFailure>;
+  writeTree(): Promise<{ readonly ok: true; readonly id: string } | GitFailure>;
+  commitTree(
+    request: TreeCommitRequest,
+  ): Promise<{ readonly ok: true; readonly id: string } | GitFailure>;
+  updateRef(ref: string, id: string): Promise<BasicResult>;
+  listRefs(
+    prefix?: string,
+  ): Promise<
+    { readonly ok: true; readonly entries: readonly RefEntry[] } | GitFailure
+  >;
   createBranch(name: string): Promise<BasicResult>;
   switchBranch(name: string): Promise<BasicResult>;
   resolveRef(
@@ -186,6 +206,56 @@ export function createGitAdapter(
       if (isGitFailure(result)) return result;
       const ref = await this.resolveRef("HEAD");
       return ref.ok ? Object.freeze({ ok: true, id: ref.id }) : ref;
+    },
+    async writeTree() {
+      const result = await git("write-tree", ["write-tree"]);
+      return isGitFailure(result)
+        ? result
+        : Object.freeze({ ok: true, id: result.stdout.trim() });
+    },
+    async commitTree(request) {
+      const result = await git(
+        "commit-tree",
+        [
+          "-c",
+          "commit.gpgSign=false",
+          "commit-tree",
+          request.tree,
+          ...request.parents.flatMap((parent) => ["-p", parent]),
+          "-m",
+          request.message,
+        ],
+        {
+          GIT_AUTHOR_NAME: request.author.name,
+          GIT_AUTHOR_EMAIL: request.author.email,
+          GIT_AUTHOR_DATE: request.authoredAt,
+          GIT_COMMITTER_NAME: request.committer.name,
+          GIT_COMMITTER_EMAIL: request.committer.email,
+          GIT_COMMITTER_DATE: request.committedAt,
+        },
+      );
+      return isGitFailure(result)
+        ? result
+        : Object.freeze({ ok: true, id: result.stdout.trim() });
+    },
+    updateRef(ref, id) {
+      return basic("update-ref", ["update-ref", ref, id]);
+    },
+    async listRefs(prefix = "refs/") {
+      const result = await git("list-refs", [
+        "for-each-ref",
+        "--format=%(refname)%00%(objectname)",
+        prefix,
+      ]);
+      if (isGitFailure(result)) return result;
+      const entries = result.stdout
+        .split("\n")
+        .filter(Boolean)
+        .map((record) => {
+          const [name = "", id = ""] = record.split("\0");
+          return Object.freeze({ name, id });
+        });
+      return Object.freeze({ ok: true, entries: Object.freeze(entries) });
     },
     createBranch(name) {
       return basic("create-branch", ["branch", name]);
