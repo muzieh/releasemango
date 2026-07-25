@@ -25,6 +25,7 @@ import {
 import { execa } from "execa";
 import { fileURLToPath } from "node:url";
 import type { ScenarioCommit } from "../domain/scenarios/index.js";
+import { fingerprintAssetBundle } from "./fingerprint.js";
 import {
   GenerationError,
   OWNERSHIP_MANIFEST_PATH,
@@ -84,25 +85,6 @@ async function canonicalTarget(path: string): Promise<string> {
   }
   const canonicalAncestor = await realpath(ancestor);
   return resolve(canonicalAncestor, relative(ancestor, path));
-}
-
-async function fingerprint(root: string): Promise<string> {
-  const hash = createHash("sha256");
-  const visit = async (path: string, prefix = ""): Promise<void> => {
-    for (const entry of (await readdir(path, { withFileTypes: true })).sort(
-      (a, b) => a.name.localeCompare(b.name),
-    )) {
-      const relativeName = prefix ? `${prefix}/${entry.name}` : entry.name;
-      hash.update(relativeName);
-      if (entry.isSymbolicLink())
-        throw new Error(`Fixture symlink is not allowed: ${relativeName}`);
-      if (entry.isDirectory())
-        await visit(join(path, entry.name), relativeName);
-      else hash.update(await readFile(join(path, entry.name)));
-    }
-  };
-  await visit(root);
-  return hash.digest("hex");
 }
 
 const identityFields = (manifest: OwnershipManifest) => ({
@@ -309,7 +291,7 @@ async function validate(request: GenerationRequest): Promise<{
   return {
     fixture,
     manifest,
-    fixtureIdentity: await fingerprint(fixture),
+    fixtureIdentity: await fingerprintAssetBundle(fixture),
     seed,
   };
 }

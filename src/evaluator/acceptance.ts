@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
-import { access, readFile, readdir, realpath } from "node:fs/promises";
+import { access, readFile, realpath } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   OWNERSHIP_MANIFEST_PATH,
   type OwnershipManifest,
 } from "../generator/index.js";
+import { fingerprintAssetBundle } from "../generator/fingerprint.js";
 import type {
   BehaviorCheck,
   ScenarioDefinition,
@@ -45,24 +45,6 @@ const assetFailure = (summary: string): AcceptanceEvaluationResult =>
     remediation:
       "Restore the trusted judging bundle and regenerate the workspace.",
   });
-
-async function fingerprint(root: string): Promise<string> {
-  const hash = createHash("sha256");
-  const visit = async (path: string, prefix = ""): Promise<void> => {
-    for (const entry of (await readdir(path, { withFileTypes: true })).sort(
-      (left, right) => left.name.localeCompare(right.name),
-    )) {
-      const name = prefix ? `${prefix}/${entry.name}` : entry.name;
-      hash.update(name);
-      if (entry.isSymbolicLink())
-        throw new Error(`Symlink is not allowed: ${name}`);
-      if (entry.isDirectory()) await visit(join(path, entry.name), name);
-      else hash.update(await readFile(join(path, entry.name)));
-    }
-  };
-  await visit(root);
-  return hash.digest("hex");
-}
 
 const inside = (root: string, path: string): boolean => {
   const name = relative(root, path);
@@ -120,7 +102,8 @@ export async function evaluateAcceptanceRelease(
     bundle = await realpath(request.judgingBundle);
     if (
       manifest.judgingBundle.identity !== basename(bundle) ||
-      manifest.judgingBundle.integrity !== (await fingerprint(bundle))
+      manifest.judgingBundle.integrity !==
+        (await fingerprintAssetBundle(bundle))
     )
       return assetFailure(
         "Trusted judging bundle identity or integrity does not match.",

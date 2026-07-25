@@ -41,6 +41,10 @@ resolves available relative check assets against this directory, rejects
 symlinks and path escapes, and fails before executing a check when the bundle is
 missing or its fingerprint differs.
 
+The fingerprint stream uses bytewise path ordering, an entry-type marker, and
+length-framed UTF-8 paths and file contents. Directories are included
+explicitly, and unsupported entry types fail closed.
+
 ## Representation contract
 
 - Baseline and every state are copied into a fresh OS temporary directory.

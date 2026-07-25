@@ -113,7 +113,9 @@ export async function evaluateBranch(
         if (cancelled) break;
       }
       if (!cancelled) {
-        const isolatedGit = createGitAdapter(worktree);
+        const isolatedGit = request.createWorktreeGitAdapter
+          ? request.createWorktreeGitAdapter(worktree)
+          : createGitAdapter(worktree);
         const statusStarted = now();
         const status = await isolatedGit.status();
         if (status.ok) {

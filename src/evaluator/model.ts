@@ -42,6 +42,8 @@ export interface EvaluationRequest {
   readonly git?: GitAdapter;
   readonly now?: () => number;
   readonly createTemporaryDirectory?: () => Promise<string>;
+  /** Test-only boundary for deterministic isolated-worktree status failures. */
+  readonly createWorktreeGitAdapter?: (repository: string) => GitAdapter;
 }
 
 export type ProductionEvaluationRequest = Omit<

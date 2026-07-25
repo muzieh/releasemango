@@ -1,4 +1,5 @@
 export { generateWorkspace } from "./generate.js";
+export { fingerprintAssetBundle } from "./fingerprint.js";
 export {
   GenerationError,
   OWNERSHIP_MANIFEST_PATH,
