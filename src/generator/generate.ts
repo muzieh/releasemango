@@ -23,6 +23,7 @@ import {
   sep,
 } from "node:path";
 import { execa } from "execa";
+import { fileURLToPath } from "node:url";
 import type { ScenarioCommit } from "../domain/scenarios/index.js";
 import {
   GenerationError,
@@ -33,6 +34,10 @@ import {
   type GenerationResult,
   type OwnershipManifest,
 } from "./model.js";
+
+const SOURCE_CHECKOUT = resolve(
+  fileURLToPath(new URL("../../", import.meta.url)),
+);
 
 const refName = (value: string): string => {
   const normalized = value
@@ -70,6 +75,17 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+async function canonicalTarget(path: string): Promise<string> {
+  let ancestor = path;
+  while (!(await exists(ancestor))) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  const canonicalAncestor = await realpath(ancestor);
+  return resolve(canonicalAncestor, relative(ancestor, path));
+}
+
 async function fingerprint(root: string): Promise<string> {
   const hash = createHash("sha256");
   const visit = async (path: string, prefix = ""): Promise<void> => {
@@ -104,6 +120,63 @@ const sameIdentity = (
 ): boolean =>
   JSON.stringify(identityFields(left)) ===
   JSON.stringify(identityFields(right));
+
+function expectedRefNames(request: GenerationRequest): Set<string> {
+  return new Set([
+    "refs/heads/main",
+    "refs/releasemango/baselines/acceptance",
+    "refs/releasemango/baselines/production",
+    "refs/releasemango/fixture/baseline",
+    ...request.scenario.commits.flatMap((commit) => [
+      `refs/releasemango/commits/${refName(commit.id)}`,
+      `refs/heads/tickets/${refName(commit.ticket)}`,
+    ]),
+  ]);
+}
+
+async function validateOwnedDestination(
+  destination: string,
+  input: unknown,
+  intended: OwnershipManifest,
+  request: GenerationRequest,
+): Promise<void> {
+  if (input === null || typeof input !== "object" || Array.isArray(input))
+    throw new Error("Ownership manifest must be an object.");
+  const value = input as Record<string, unknown>;
+  for (const field of [
+    "scenarioId",
+    "generatorVersion",
+    "fixture",
+    "fixtureIdentity",
+    "workspaceInitialMain",
+  ])
+    if (typeof value[field] !== "string" || value[field] === "")
+      throw new Error(`Ownership manifest field '${field}' is invalid.`);
+  if (
+    value.schemaVersion !== 1 ||
+    typeof value.seed !== "number" ||
+    !Number.isSafeInteger(value.seed) ||
+    value.generatedRefs === null ||
+    typeof value.generatedRefs !== "object" ||
+    Array.isArray(value.generatedRefs)
+  )
+    throw new Error("Ownership manifest shape is invalid.");
+  const manifest = value as unknown as OwnershipManifest;
+  if (!sameIdentity(manifest, intended))
+    throw new Error("Destination ownership identity does not match.");
+  const refs = manifest.generatedRefs;
+  const expected = [...expectedRefNames(request)].sort();
+  const actual = Object.keys(refs).sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected))
+    throw new Error("Ownership manifest generated refs are incomplete.");
+  for (const [ref, id] of Object.entries(refs)) {
+    if (!/^[0-9a-f]{40}$/u.test(id))
+      throw new Error(`Ownership ref '${ref}' has an invalid object ID.`);
+    const resolved = await git(destination, ["rev-parse", "--verify", ref]);
+    if (resolved !== id)
+      throw new Error(`Ownership ref '${ref}' does not match the repository.`);
+  }
+}
 
 async function git(
   repository: string,
@@ -182,16 +255,19 @@ async function validate(request: GenerationRequest): Promise<{
 }> {
   phase(request, "validation");
   const destination = resolve(request.destination);
-  const sourceCheckout = resolve(request.sourceCheckout ?? process.cwd());
+  const sourceCheckout = await realpath(SOURCE_CHECKOUT);
   const destinationExists = await exists(destination);
   if (
     inside(sourceCheckout, destination) ||
-    (destinationExists && inside(sourceCheckout, await realpath(destination)))
+    inside(sourceCheckout, await canonicalTarget(destination))
   )
     throw new Error("Destination must be outside the source checkout.");
   if (destinationExists && (await lstat(destination)).isSymbolicLink())
     throw new Error("Destination must not be a symbolic link.");
   const fixture = await realpath(request.fixture);
+  const seed = request.seed ?? request.scenario.seed;
+  if (!Number.isSafeInteger(seed) || seed < 0)
+    throw new Error("Generation seed must be a non-negative safe integer.");
   const manifest = JSON.parse(
     await readFile(join(fixture, "states.json"), "utf8"),
   ) as FixtureManifest;
@@ -227,7 +303,7 @@ async function validate(request: GenerationRequest): Promise<{
     fixture,
     manifest,
     fixtureIdentity: await fingerprint(fixture),
-    seed: request.seed ?? request.scenario.seed,
+    seed,
   };
 }
 
@@ -269,11 +345,11 @@ export async function generateWorkspace(
             "validation",
             "Destination is non-empty and overwrite is false.",
           );
-        let owned: OwnershipManifest;
+        let owned: unknown;
         try {
           owned = JSON.parse(
             await readFile(join(destination, OWNERSHIP_MANIFEST_PATH), "utf8"),
-          ) as OwnershipManifest;
+          );
         } catch (error) {
           throw new GenerationError(
             "validation",
@@ -281,11 +357,15 @@ export async function generateWorkspace(
             error,
           );
         }
-        if (!sameIdentity(owned, intended))
+        try {
+          await validateOwnedDestination(destination, owned, intended, request);
+        } catch (error) {
           throw new GenerationError(
             "validation",
-            "Destination ownership identity does not match.",
+            "Destination ownership state is invalid.",
+            error,
           );
+        }
       }
     }
 
@@ -309,13 +389,23 @@ export async function generateWorkspace(
     await git(staging, ["config", "--local", "commit.gpgSign", "false"]);
     await git(staging, ["config", "--local", "tag.gpgSign", "false"]);
 
+    const metadataKey = createHash("sha256")
+      .update(request.generatorVersion)
+      .update("\0")
+      .update(request.scenario.metadata.id)
+      .update("\0")
+      .update(String(validated.seed))
+      .digest("hex");
+    const identityName = `Release Mango ${metadataKey.slice(0, 12)}`;
+    const identityEmail = `generator+${metadataKey}@releasemango.invalid`;
     const identity = {
-      GIT_AUTHOR_NAME: "Release Mango",
-      GIT_AUTHOR_EMAIL: "generator@releasemango.invalid",
-      GIT_COMMITTER_NAME: "Release Mango",
-      GIT_COMMITTER_EMAIL: "generator@releasemango.invalid",
+      GIT_AUTHOR_NAME: identityName,
+      GIT_AUTHOR_EMAIL: identityEmail,
+      GIT_COMMITTER_NAME: identityName,
+      GIT_COMMITTER_EMAIL: identityEmail,
     };
-    const seconds = 1_700_000_000 + (validated.seed % 100_000);
+    const seconds =
+      946_684_800 + Number(BigInt(`0x${metadataKey}`) % 2_000_000_000n);
     const dated = (index: number) => {
       const date = `${String(seconds + index * 60)} +0000`;
       return { ...identity, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date };

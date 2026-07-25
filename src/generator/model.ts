@@ -29,7 +29,6 @@ export interface GenerationRequest {
   readonly generatorVersion: string;
   readonly seed?: number;
   readonly overwrite?: boolean;
-  readonly sourceCheckout?: string;
   /** Test-only boundary used to prove phase cleanup and rollback. */
   readonly failAt?: GenerationPhase;
 }
