@@ -54,6 +54,9 @@ export interface ScenarioDefinition {
   readonly schemaVersion: 1;
   readonly metadata: ScenarioMetadata;
   readonly seed: number;
+  readonly workspace: {
+    readonly initialMain: string;
+  };
   readonly ticketStatuses: readonly TicketStatus[];
   readonly tickets: readonly Ticket[];
   readonly commits: readonly ScenarioCommit[];

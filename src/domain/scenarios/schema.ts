@@ -22,6 +22,7 @@ export const scenarioV1Schema = z.strictObject({
     description: nonEmpty,
   }),
   seed: z.number().int().nonnegative(),
+  workspace: z.strictObject({ initialMain: identifier }),
   ticketStatuses: z
     .array(z.strictObject({ id: identifier, name: nonEmpty }))
     .min(1),

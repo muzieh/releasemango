@@ -10,11 +10,13 @@ export {
   createGitAdapter,
   type CommitIdentity,
   type CommitRequest,
+  type TreeCommitRequest,
   type GitAdapter,
   type GitAdapterOptions,
   type GitFailure,
   type GitOperationOptions,
   type LogEntry,
+  type RefEntry,
   type StatusEntry,
   type WorktreeEntry,
 } from "./adapter.js";
