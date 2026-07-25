@@ -78,6 +78,7 @@ export interface GitAdapter {
   switchBranch(name: string): Promise<BasicResult>;
   resolveRef(
     ref: string,
+    options?: GitOperationOptions,
   ): Promise<{ readonly ok: true; readonly id: string } | GitFailure>;
   status(): Promise<
     { readonly ok: true; readonly entries: readonly StatusEntry[] } | GitFailure
@@ -192,8 +193,13 @@ export function createGitAdapter(
     switchBranch(name) {
       return basic("switch-branch", ["switch", name]);
     },
-    async resolveRef(ref) {
-      const result = await git("resolve-ref", ["rev-parse", "--verify", ref]);
+    async resolveRef(ref, options = {}) {
+      const result = await git(
+        "resolve-ref",
+        ["rev-parse", "--verify", ref],
+        {},
+        options,
+      );
       return isGitFailure(result)
         ? result
         : Object.freeze({ ok: true, id: result.stdout.trim() });

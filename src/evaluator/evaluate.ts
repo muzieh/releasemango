@@ -33,13 +33,45 @@ export async function evaluateBranch(
   let ownsTemporaryDirectory = false;
   let cancelled = false;
 
+  if (!isExactBranchName(request.branch)) {
+    checks.push(
+      invalidRefCheck(
+        "repository.branch",
+        "Branch must be an exact local branch name",
+        now() - started,
+        limit,
+      ),
+    );
+    return finish(checks, started, now, false);
+  }
   const branchRef = `refs/heads/${request.branch}`;
-  const branch = await git.resolveRef(branchRef);
+  const branch = await git.resolveRef(branchRef, signalOptions(request.signal));
   if (!branch.ok) {
     checks.push(
       fromGitFailure("repository.branch", branch, now() - started, limit),
     );
+    return finish(checks, started, now, isCancelledFailure(branch));
+  }
+  if (!isExactNamedRef(request.baseline)) {
+    checks.push(
+      invalidRefCheck(
+        "repository.baseline",
+        "Baseline must be an exact fully-qualified named ref",
+        now() - started,
+        limit,
+      ),
+    );
     return finish(checks, started, now, false);
+  }
+  const baseline = await git.resolveRef(
+    request.baseline,
+    signalOptions(request.signal),
+  );
+  if (!baseline.ok) {
+    checks.push(
+      fromGitFailure("repository.baseline", baseline, now() - started, limit),
+    );
+    return finish(checks, started, now, isCancelledFailure(baseline));
   }
 
   try {
@@ -54,6 +86,7 @@ export async function evaluateBranch(
       checks.push(
         fromGitFailure("repository.worktree", added, now() - started, limit),
       );
+      cancelled = isCancelledFailure(added);
     } else {
       worktreeRegistered = true;
       for (const [category, authored] of [
@@ -133,9 +166,10 @@ export async function evaluateBranch(
           checks.push(fromGitFailure("repository.conflicts", status, 0, limit));
         }
         const ancestryStarted = now();
-        const ancestry = await git.isAncestor(request.baseline, branchRef, {
+        const ancestry = await git.isAncestor(baseline.id, branch.id, {
           ...(request.signal === undefined ? {} : { signal: request.signal }),
         });
+        if (!ancestry.ok && isCancelledFailure(ancestry)) cancelled = true;
         checks.push(
           ancestry.ok
             ? makeCheck(
@@ -292,6 +326,52 @@ function fromGitFailure(
     "error",
     durationMs,
     evidence(failure.process),
+    limit,
+  );
+}
+
+function isCancelledFailure(failure: GitFailure): boolean {
+  return failure.process.kind === "cancelled";
+}
+
+function signalOptions(signal: AbortSignal | undefined) {
+  return signal === undefined ? {} : { signal };
+}
+
+function isExactBranchName(value: string): boolean {
+  return (
+    value.length > 0 &&
+    !value.startsWith("-") &&
+    !value.startsWith("/") &&
+    !value.endsWith("/") &&
+    !value.endsWith(".") &&
+    !value.includes("..") &&
+    !value.includes("@{") &&
+    !/[~^:?*[\]\\\s]/u.test(value)
+  );
+}
+
+function isExactNamedRef(value: string): boolean {
+  const prefix = value.startsWith("refs/heads/")
+    ? "refs/heads/"
+    : value.startsWith("refs/tags/")
+      ? "refs/tags/"
+      : undefined;
+  return prefix !== undefined && isExactBranchName(value.slice(prefix.length));
+}
+
+function invalidRefCheck(
+  id: string,
+  summary: string,
+  durationMs: number,
+  limit: number,
+): EvaluationCheckResult {
+  return makeCheck(
+    id,
+    "infrastructure",
+    "error",
+    durationMs,
+    { summary },
     limit,
   );
 }
