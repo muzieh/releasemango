@@ -1,0 +1,182 @@
+import { execa } from "execa";
+
+export interface ProcessRequest {
+  readonly executable: string;
+  readonly args: readonly string[];
+  readonly cwd: string;
+  readonly environment?: Readonly<Record<string, string>>;
+  readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
+}
+
+interface ProcessRecord {
+  readonly executable: string;
+  readonly args: readonly string[];
+  readonly cwd: string;
+  readonly exitCode: number | null;
+}
+
+export type ProcessResult =
+  | (ProcessRecord & {
+      readonly kind: "completed";
+      readonly exitCode: number;
+      readonly stdout: string;
+      readonly stderr: string;
+      readonly termination: "exit";
+    })
+  | (ProcessRecord & {
+      readonly kind:
+        "adapter-failed" | "spawn-failed" | "timed-out" | "cancelled";
+      readonly stdout: string;
+      readonly stderr: string;
+      readonly termination:
+        "adapter-failure" | "spawn-failure" | "timeout" | "cancellation";
+      readonly message: string;
+    });
+
+export interface ProcessRunner {
+  run(request: ProcessRequest): Promise<ProcessResult>;
+}
+
+export interface ProcessRunnerOptions {
+  readonly allowedEnvironment?: readonly string[];
+}
+
+export function createProcessRunner(
+  options: ProcessRunnerOptions = {},
+): ProcessRunner {
+  const allowed = new Set(options.allowedEnvironment ?? []);
+  return {
+    async run(request): Promise<ProcessResult> {
+      const identity = Object.freeze({
+        executable: request.executable,
+        args: Object.freeze([...request.args]),
+        cwd: request.cwd,
+      });
+      const environment = request.environment ?? {};
+      const disallowed = Object.keys(environment).find(
+        (key) => !allowed.has(key),
+      );
+      if (disallowed !== undefined) {
+        return Object.freeze({
+          ...identity,
+          kind: "adapter-failed",
+          exitCode: null,
+          stdout: "",
+          stderr: "",
+          termination: "adapter-failure",
+          message: "Environment override is not allowed",
+        });
+      }
+
+      try {
+        const result = await execa(request.executable, request.args, {
+          cwd: request.cwd,
+          env: environment,
+          shell: false,
+          reject: false,
+          encoding: "utf8",
+          ...(request.timeoutMs === undefined
+            ? {}
+            : { timeout: request.timeoutMs }),
+          ...(request.signal === undefined
+            ? {}
+            : { cancelSignal: request.signal }),
+        });
+        if (typeof result.exitCode !== "number") {
+          const failure = asExecaFailure(result);
+          const kind = failure.isCanceled
+            ? "cancelled"
+            : failure.timedOut
+              ? "timed-out"
+              : "spawn-failed";
+          return Object.freeze({
+            ...identity,
+            kind,
+            exitCode: null,
+            stdout: failure.stdout,
+            stderr: failure.stderr,
+            termination: terminationFor(kind),
+            message:
+              kind === "cancelled"
+                ? "Process was cancelled"
+                : kind === "timed-out"
+                  ? "Process timed out"
+                  : "Process could not be started",
+          });
+        }
+        return Object.freeze({
+          ...identity,
+          kind: "completed",
+          exitCode: result.exitCode,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          termination: "exit",
+        });
+      } catch (error: unknown) {
+        const failure = asExecaFailure(error);
+        const kind = failure.isCanceled
+          ? "cancelled"
+          : failure.timedOut
+            ? "timed-out"
+            : failure.code === "ENOENT"
+              ? "spawn-failed"
+              : "spawn-failed";
+        return Object.freeze({
+          ...identity,
+          kind,
+          exitCode: null,
+          stdout: failure.stdout,
+          stderr: failure.stderr,
+          termination: terminationFor(kind),
+          message:
+            kind === "cancelled"
+              ? "Process was cancelled"
+              : kind === "timed-out"
+                ? "Process timed out"
+                : "Process could not be started",
+        });
+      }
+    },
+  };
+}
+
+function asExecaFailure(error: unknown): {
+  readonly code?: string;
+  readonly timedOut?: boolean;
+  readonly isCanceled?: boolean;
+  readonly stdout: string;
+  readonly stderr: string;
+} {
+  if (typeof error !== "object" || error === null) {
+    return { stdout: "", stderr: "" };
+  }
+  const failure = error as {
+    readonly code?: unknown;
+    readonly timedOut?: unknown;
+    readonly isCanceled?: unknown;
+    readonly stdout?: unknown;
+    readonly stderr?: unknown;
+  };
+  return {
+    ...(typeof failure.code === "string" ? { code: failure.code } : {}),
+    ...(typeof failure.timedOut === "boolean"
+      ? { timedOut: failure.timedOut }
+      : {}),
+    ...(typeof failure.isCanceled === "boolean"
+      ? { isCanceled: failure.isCanceled }
+      : {}),
+    stdout: typeof failure.stdout === "string" ? failure.stdout : "",
+    stderr: typeof failure.stderr === "string" ? failure.stderr : "",
+  };
+}
+
+function terminationFor(
+  kind: "spawn-failed" | "timed-out" | "cancelled",
+): "spawn-failure" | "timeout" | "cancellation" {
+  return kind === "timed-out"
+    ? "timeout"
+    : kind === "cancelled"
+      ? "cancellation"
+      : "spawn-failure";
+}
