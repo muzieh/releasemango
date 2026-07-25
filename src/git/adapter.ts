@@ -26,6 +26,7 @@ export interface CommitRequest {
 
 export interface StatusEntry {
   readonly path: string;
+  readonly originalPath?: string;
   readonly index: string;
   readonly worktree: string;
 }
@@ -184,16 +185,25 @@ export function createGitAdapter(
         "--untracked-files=all",
       ]);
       if (isGitFailure(result)) return result;
-      const entries = result.stdout
-        .split("\0")
-        .filter(Boolean)
-        .map((record) =>
+      const records = result.stdout.split("\0").filter(Boolean);
+      const entries: StatusEntry[] = [];
+      for (let cursor = 0; cursor < records.length; cursor += 1) {
+        const record = records[cursor];
+        if (record === undefined) continue;
+        const index = record[0] ?? " ";
+        const worktree = record[1] ?? " ";
+        const renamedOrCopied = "RC".includes(index) || "RC".includes(worktree);
+        const originalPath = renamedOrCopied ? records[cursor + 1] : undefined;
+        if (renamedOrCopied && originalPath !== undefined) cursor += 1;
+        entries.push(
           Object.freeze({
-            index: record[0] ?? " ",
-            worktree: record[1] ?? " ",
+            index,
+            worktree,
             path: record.slice(3),
+            ...(originalPath === undefined ? {} : { originalPath }),
           }),
         );
+      }
       return Object.freeze({ ok: true, entries: Object.freeze(entries) });
     },
     async log() {

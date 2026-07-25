@@ -1,4 +1,4 @@
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createProcessRunner } from "../../src/git/index.js";
@@ -47,26 +47,81 @@ describe("process runner", () => {
     await expect(
       runner.run({ executable: "missing-tea-executable", args: [], cwd }),
     ).resolves.toMatchObject({ kind: "spawn-failed", exitCode: null });
-    await expect(
-      runner.run({
+    await withTemporaryDirectory(async (directory) => {
+      const timeoutPidPath = join(directory, "timeout.pid");
+      const timeout = runner.run({
         executable: process.execPath,
-        args: ["-e", "setInterval(() => {}, 1000)"],
+        args: [
+          "-e",
+          "require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)",
+          timeoutPidPath,
+        ],
         cwd,
-        timeoutMs: 30,
-      }),
-    ).resolves.toMatchObject({ kind: "timed-out", exitCode: null });
+        timeoutMs: 1_000,
+      });
+      const timeoutPid = await waitForPid(timeoutPidPath);
+      const timeoutResult = await timeout;
+      expect(timeoutResult).toMatchObject({
+        kind: "timed-out",
+        exitCode: null,
+      });
+      await expectProcessGone(timeoutPid);
 
-    const controller = new AbortController();
-    setTimeout(() => {
-      controller.abort();
-    }, 30);
-    await expect(
-      runner.run({
+      const cancellationPidPath = join(directory, "cancellation.pid");
+      const controller = new AbortController();
+      const cancellation = runner.run({
         executable: process.execPath,
-        args: ["-e", "setInterval(() => {}, 1000)"],
+        args: [
+          "-e",
+          "require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)",
+          cancellationPidPath,
+        ],
         cwd,
         signal: controller.signal,
-      }),
-    ).resolves.toMatchObject({ kind: "cancelled", exitCode: null });
+      });
+      const cancellationPid = await waitForPid(cancellationPidPath);
+      controller.abort();
+      await expect(cancellation).resolves.toMatchObject({
+        kind: "cancelled",
+        exitCode: null,
+      });
+      await expectProcessGone(cancellationPid);
+    });
   });
 });
+
+async function readPid(path: string): Promise<number> {
+  return Number(await readFile(path, "utf8"));
+}
+
+async function waitForPid(path: string): Promise<number> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    try {
+      return await readPid(path);
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw new Error(`Child did not publish PID at ${path}`);
+}
+
+async function expectProcessGone(pid: number): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ESRCH"
+      ) {
+        return;
+      }
+      throw error;
+    }
+  }
+  throw new Error(`Child process ${String(pid)} remained alive`);
+}

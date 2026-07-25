@@ -1,7 +1,8 @@
-import { writeFile } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createGitAdapter } from "../../src/git/index.js";
+import type { ProcessRunner } from "../../src/git/index.js";
 import { withTemporaryDirectory } from "../support/temporary-directory.js";
 
 describe("Git adapter", () => {
@@ -31,9 +32,25 @@ describe("Git adapter", () => {
         ids.push(commit.id);
         expect((await git.createBranch("feature")).ok).toBe(true);
         expect((await git.switchBranch("feature")).ok).toBe(true);
+        await rename(
+          join(repository, "file.txt"),
+          join(repository, "new name.txt"),
+        );
+        expect((await git.stage(["file.txt", "new name.txt"])).ok).toBe(true);
         await writeFile(join(repository, "untracked.txt"), "x");
         const status = await git.status();
-        expect(status.ok && status.entries[0]).toMatchObject({
+        expect(
+          status.ok && status.entries.find(({ index }) => index === "R"),
+        ).toMatchObject({
+          path: "new name.txt",
+          originalPath: "file.txt",
+          index: "R",
+          worktree: " ",
+        });
+        expect(
+          status.ok &&
+            status.entries.find(({ path }) => path === "untracked.txt"),
+        ).toMatchObject({
           path: "untracked.txt",
           index: "?",
           worktree: "?",
@@ -49,6 +66,42 @@ describe("Git adapter", () => {
         expect(worktrees.ok && worktrees.entries[0]?.path).toBe(repository);
       }
       expect(ids[0]).toBe(ids[1]);
+    });
+  });
+
+  it("keeps the source path of copy records separate from following entries", async () => {
+    const runner: ProcessRunner = {
+      run(request) {
+        return Promise.resolve({
+          kind: "completed",
+          executable: request.executable,
+          args: request.args,
+          cwd: request.cwd,
+          exitCode: 0,
+          stdout: "C  copied.txt\0source.txt\0?? untracked.txt\0",
+          stderr: "",
+          termination: "exit",
+        });
+      },
+    };
+
+    const status = await createGitAdapter("/unused", { runner }).status();
+
+    expect(status).toEqual({
+      ok: true,
+      entries: [
+        {
+          index: "C",
+          worktree: " ",
+          path: "copied.txt",
+          originalPath: "source.txt",
+        },
+        {
+          index: "?",
+          worktree: "?",
+          path: "untracked.txt",
+        },
+      ],
     });
   });
 });
