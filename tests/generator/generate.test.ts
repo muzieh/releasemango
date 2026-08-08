@@ -61,7 +61,15 @@ const scenario: ScenarioDefinition = {
   },
   checks: { required: [], forbidden: [] },
   hints: [{ tier: 1, text: "Inspect" }],
-  scoring: { result: 100 },
+  scoring: {
+    weights: {
+      required: 40,
+      forbidden: 20,
+      repository: 20,
+      infrastructure: 20,
+    },
+    mandatoryChecks: [],
+  },
 };
 
 async function runGit(repository: string, args: string[]): Promise<string> {

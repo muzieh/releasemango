@@ -274,27 +274,68 @@ const validateHints = (
 
 const validateScoring = (
   scoring: ScenarioV1Input["scoring"],
+  checks: ScenarioV1Input["checks"] | undefined,
   diagnostics: MutableDiagnostic[],
 ): void => {
-  for (const [name, weight] of Object.entries(scoring)) {
+  for (const [name, weight] of Object.entries(scoring.weights)) {
     if (weight < 0)
       diagnostics.push(
         diagnostic(
           "scoring.negative-weight",
           `Scoring weight '${name}' cannot be negative.`,
-          ["scoring", name],
+          ["scoring", "weights", name],
         ),
       );
   }
-  const total = Object.values(scoring).reduce((sum, weight) => sum + weight, 0);
+  const total = Object.values(scoring.weights).reduce(
+    (sum, weight) => sum + weight,
+    0,
+  );
   if (total !== 100)
     diagnostics.push(
       diagnostic(
         "scoring.invalid-total",
         `Scoring weights must total 100; received ${String(total)}.`,
-        ["scoring"],
+        ["scoring", "weights"],
       ),
     );
+  const fixedIds = new Set([
+    "repository.branch",
+    "repository.baseline",
+    "repository.worktree",
+    "repository.clean",
+    "repository.conflicts",
+    "repository.ancestry",
+    "repository.setup",
+    "repository.cleanup",
+    "infrastructure.judging-assets",
+  ]);
+  const known = new Set([
+    ...(checks?.required.map(({ id }) => id) ?? []),
+    ...(checks?.forbidden.map(({ id }) => id) ?? []),
+    ...fixedIds,
+  ]);
+  const seen = new Set<string>();
+  scoring.mandatoryChecks.forEach((id, index) => {
+    const path = ["scoring", "mandatoryChecks", index] as const;
+    if (!known.has(id))
+      diagnostics.push(
+        diagnostic(
+          "scoring.mandatory-check-not-found",
+          `Mandatory check '${id}' does not exist.`,
+          path,
+        ),
+      );
+    if (seen.has(id))
+      diagnostics.push(
+        diagnostic(
+          "scoring.duplicate-mandatory-check",
+          `Mandatory check '${id}' is declared more than once.`,
+          path,
+        ),
+      );
+    seen.add(id);
+  });
 };
 
 const validateSemantics = (parts: SemanticParts): MutableDiagnostic[] => {
@@ -315,7 +356,7 @@ const validateSemantics = (parts: SemanticParts): MutableDiagnostic[] => {
   validateReferences(parts, diagnostics);
   if (parts.checks) validateChecks(parts.checks, diagnostics);
   if (parts.hints) validateHints(parts.hints, diagnostics);
-  if (parts.scoring) validateScoring(parts.scoring, diagnostics);
+  if (parts.scoring) validateScoring(parts.scoring, parts.checks, diagnostics);
   return diagnostics;
 };
 
@@ -385,17 +426,17 @@ export const parseScenario = (
     return {
       ok: false,
       diagnostics: [
-        ...parsed.error.issues.map((issue) =>
-          diagnostic(
-            "schema.invalid",
-            issue.message,
+        ...parsed.error.issues.map((issue) => {
+          const path =
             issue.path.length === 1 && issue.path[0] === "workspace"
               ? ["workspace", "initialMain"]
               : issue.path.map((segment) =>
                   typeof segment === "symbol" ? String(segment) : segment,
-                ),
-          ),
-        ),
+                );
+          if (issue.code === "unrecognized_keys" && issue.keys.length === 1)
+            path.push(issue.keys[0] ?? "unknown");
+          return diagnostic("schema.invalid", issue.message, path);
+        }),
         ...semanticDiagnostics,
       ],
     };

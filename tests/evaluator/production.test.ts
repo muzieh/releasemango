@@ -436,7 +436,15 @@ function scenarioFixture() {
       },
       checks: { required, forbidden },
       hints: [{ tier: 1, text: "Fix it" }],
-      scoring: { behavior: 100 },
+      scoring: {
+        weights: {
+          required: 40,
+          forbidden: 20,
+          repository: 20,
+          infrastructure: 20,
+        },
+        mandatoryChecks: [],
+      },
     }),
   );
   if (!parsed.ok) throw new Error("Scenario fixture is invalid");

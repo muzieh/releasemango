@@ -56,7 +56,15 @@ export const scenarioV1Schema = z.strictObject({
       z.strictObject({ tier: z.number().int().positive(), text: nonEmpty }),
     )
     .min(1),
-  scoring: z.record(identifier, z.number()),
+  scoring: z.strictObject({
+    weights: z.strictObject({
+      required: z.number(),
+      forbidden: z.number(),
+      repository: z.number(),
+      infrastructure: z.number(),
+    }),
+    mandatoryChecks: z.array(identifier),
+  }),
 });
 
 export type ScenarioV1Input = z.infer<typeof scenarioV1Schema>;
