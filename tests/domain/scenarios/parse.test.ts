@@ -167,12 +167,12 @@ describe("parseScenario", () => {
     ],
     [
       "negative score",
-      replace("ticketSelection: 40", "ticketSelection: -1"),
+      replace("required: 40", "required: -1"),
       "scoring.negative-weight",
     ],
     [
       "wrong score total",
-      replace("ticketSelection: 40", "ticketSelection: 39"),
+      replace("required: 40", "required: 39"),
       "scoring.invalid-total",
     ],
   ])("rejects %s with a stable diagnostic", (_name, source, code) => {
@@ -238,4 +238,38 @@ describe("parseScenario", () => {
       ]),
     );
   });
+
+  it.each([
+    [
+      "unknown category",
+      "required: 40",
+      "learner: 40",
+      "schema.invalid",
+      ["scoring", "weights", "learner"],
+    ],
+    [
+      "unknown mandatory ID",
+      "mandatoryChecks: [tests, repository.clean]",
+      "mandatoryChecks: [missing]",
+      "scoring.mandatory-check-not-found",
+      ["scoring", "mandatoryChecks", 0],
+    ],
+    [
+      "duplicate mandatory ID",
+      "mandatoryChecks: [tests, repository.clean]",
+      "mandatoryChecks: [tests, tests]",
+      "scoring.duplicate-mandatory-check",
+      ["scoring", "mandatoryChecks", 1],
+    ],
+  ])(
+    "rejects %s at its stable path",
+    (_name, search, replacement, code, path) => {
+      const result = parseScenario(replace(search, replacement));
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({ code, path }),
+      );
+    },
+  );
 });

@@ -10,6 +10,8 @@ export type {
   ScenarioDiagnostic,
   ScenarioMetadata,
   ScenarioResult,
+  ScenarioScoring,
+  ScoringCategory,
   Ticket,
   TicketStatus,
 } from "./model.js";

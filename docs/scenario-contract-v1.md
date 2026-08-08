@@ -33,9 +33,11 @@ The canonical minimal example is
   executed by this module.
 - `hints`: authored-order tiers with non-empty text. Tiers must be the
   contiguous, unique sequence `1, 2, ...`.
-- `scoring`: named numeric weights. Each weight is non-negative and all weights
-  must total exactly 100. This contract validates weights but does not calculate
-  scores.
+- `scoring.weights`: exactly the evaluator categories `required`, `forbidden`,
+  `repository`, and `infrastructure`. Each numeric weight is non-negative and
+  the four weights total exactly 100.
+- `scoring.mandatoryChecks`: unique stable check IDs. IDs may name authored
+  behavior checks or fixed repository/infrastructure evaluator checks.
 
 ## Ordering and immutability
 
@@ -61,7 +63,8 @@ families are:
   `release.contradictory-check`;
 - `check.duplicate-id` and `check.unsafe-command`;
 - `hint.invalid-tier`;
-- `scoring.negative-weight` and `scoring.invalid-total`;
+- `scoring.negative-weight`, `scoring.invalid-total`,
+  `scoring.mandatory-check-not-found`, and `scoring.duplicate-mandatory-check`;
 - `path.read-failed` for loader I/O failures.
 
 YAML syntax failures use the parser's readable message and the most specific

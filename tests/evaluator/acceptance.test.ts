@@ -84,7 +84,15 @@ const scenario = (bundle: string): ScenarioDefinition => ({
     ],
   },
   hints: [{ tier: 1, text: bundle }],
-  scoring: { result: 100 },
+  scoring: {
+    weights: {
+      required: 40,
+      forbidden: 20,
+      repository: 20,
+      infrastructure: 20,
+    },
+    mandatoryChecks: [],
+  },
 });
 
 describe("acceptance release evaluator", () => {

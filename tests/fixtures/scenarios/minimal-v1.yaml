@@ -56,6 +56,9 @@ hints:
   - tier: 2
     text: Compare the release scopes.
 scoring:
-  ticketSelection: 40
-  commitOrdering: 30
-  releaseReadiness: 30
+  weights:
+    required: 40
+    forbidden: 20
+    repository: 20
+    infrastructure: 20
+  mandatoryChecks: [tests, repository.clean]

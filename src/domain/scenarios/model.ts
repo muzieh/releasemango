@@ -52,6 +52,14 @@ export interface HintTier {
   readonly text: string;
 }
 
+export type ScoringCategory =
+  "required" | "forbidden" | "repository" | "infrastructure";
+
+export interface ScenarioScoring {
+  readonly weights: Readonly<Record<ScoringCategory, number>>;
+  readonly mandatoryChecks: readonly string[];
+}
+
 export interface ScenarioDefinition {
   readonly schemaVersion: 1;
   readonly metadata: ScenarioMetadata;
@@ -71,5 +79,5 @@ export interface ScenarioDefinition {
     readonly forbidden: readonly BehaviorCheck[];
   };
   readonly hints: readonly HintTier[];
-  readonly scoring: Readonly<Record<string, number>>;
+  readonly scoring: ScenarioScoring;
 }
