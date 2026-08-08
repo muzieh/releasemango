@@ -165,7 +165,8 @@ export async function inspectStatus(
   };
   const sharedValid =
     manifest.judgingBundle.identity !== "" &&
-    manifest.judgingBundle.integrity !== "";
+    /^[0-9a-f]{64}$/u.test(manifest.judgingBundle.integrity) &&
+    manifest.judgingBundle.integrity === manifest.fixtureIdentity;
   const availability = (
     target: "acceptance" | "production",
   ): TargetAvailability => {

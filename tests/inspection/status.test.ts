@@ -66,8 +66,8 @@ async function repository(): Promise<{
     seed: 1,
     generatorVersion: "test",
     fixture: "fixture",
-    fixtureIdentity: "fixture-id",
-    judgingBundle: { identity: "fixture", integrity: "hash" },
+    fixtureIdentity: "a".repeat(64),
+    judgingBundle: { identity: "fixture", integrity: "a".repeat(64) },
     workspaceInitialMain: "fixture",
     generatedRefs,
   };
@@ -79,12 +79,21 @@ async function repository(): Promise<{
   return { root, manifest };
 }
 
+async function fingerprint(root: string): Promise<object> {
+  return {
+    refs: await git(root, "show-ref"),
+    head: await readFile(join(root, ".git/HEAD"), "base64"),
+    index: await readFile(join(root, ".git/index"), "base64"),
+    status: await git(root, "status", "--porcelain=v1", "-z"),
+    manifest: await readFile(join(root, OWNERSHIP_MANIFEST_PATH), "base64"),
+    player: await readFile(join(root, "player.txt"), "base64"),
+  };
+}
+
 describe("inspectStatus", () => {
   it("reports branches, named HEAD, clean state, independent readiness, and stays read-only", async () => {
     const { root } = await repository();
-    const before = await git(root, "show-ref");
-    const head = await readFile(join(root, ".git/HEAD"), "utf8");
-    const marker = await readFile(join(root, OWNERSHIP_MANIFEST_PATH), "utf8");
+    const before = await fingerprint(root);
     const result = await inspectStatus(root);
     expect(result).toMatchObject({
       ok: true,
@@ -98,11 +107,7 @@ describe("inspectStatus", () => {
         },
       },
     });
-    expect(await git(root, "show-ref")).toBe(before);
-    expect(await readFile(join(root, ".git/HEAD"), "utf8")).toBe(head);
-    expect(await readFile(join(root, OWNERSHIP_MANIFEST_PATH), "utf8")).toBe(
-      marker,
-    );
+    expect(await fingerprint(root)).toEqual(before);
   });
 
   it("reports detached and dirty states", async () => {
@@ -162,6 +167,95 @@ describe("inspectStatus", () => {
         },
       },
     });
+  });
+
+  it.each(["not-a-digest", "A".repeat(64), "a".repeat(63)])(
+    "rejects malformed judging integrity %s",
+    async (integrity) => {
+      const { root, manifest } = await repository();
+      await writeFile(
+        join(root, OWNERSHIP_MANIFEST_PATH),
+        JSON.stringify({
+          ...manifest,
+          judgingBundle: { identity: "fixture", integrity },
+        }),
+      );
+      expect(await inspectStatus(root)).toMatchObject({
+        ok: true,
+        value: {
+          evaluation: {
+            acceptance: {
+              available: false,
+              reason: { code: "JUDGING_METADATA_INVALID" },
+            },
+            production: {
+              available: false,
+              reason: { code: "JUDGING_METADATA_INVALID" },
+            },
+          },
+        },
+      });
+    },
+  );
+
+  it("reports a real merge conflict and preserves HEAD, refs, index, worktree, and metadata", async () => {
+    const { root } = await repository();
+    await git(root, "branch", "conflicting-change");
+    await writeFile(join(root, "player.txt"), "main change\n");
+    await git(root, "add", "player.txt");
+    await git(
+      root,
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "-m",
+      "main change",
+    );
+    await git(root, "checkout", "conflicting-change");
+    await writeFile(join(root, "player.txt"), "branch change\n");
+    await git(root, "add", "player.txt");
+    await git(
+      root,
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "-m",
+      "branch change",
+    );
+    await git(root, "checkout", "main");
+    await expect(
+      git(
+        root,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "merge",
+        "--no-edit",
+        "conflicting-change",
+      ),
+    ).rejects.toThrow();
+    const before = await fingerprint(root);
+    expect(await inspectStatus(root)).toMatchObject({
+      ok: true,
+      value: { worktree: "conflicted" },
+    });
+    expect(await fingerprint(root)).toEqual(before);
+  });
+
+  it("preserves repository state when inspection fails on malformed metadata", async () => {
+    const { root } = await repository();
+    await writeFile(join(root, OWNERSHIP_MANIFEST_PATH), "{");
+    const before = await fingerprint(root);
+    expect(await inspectStatus(root)).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: "OWNERSHIP_MANIFEST_MALFORMED" }],
+    });
+    expect(await fingerprint(root)).toEqual(before);
   });
 
   it.each([
