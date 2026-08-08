@@ -83,7 +83,21 @@ const scenario = (bundle: string): ScenarioDefinition => ({
       },
     ],
   },
-  hints: [{ tier: 1, text: bundle }],
+  hints: [
+    { tier: 1, name: "concept" as const, fallback: bundle, variants: [] },
+    {
+      tier: 2,
+      name: "investigation" as const,
+      fallback: "Compare checks",
+      variants: [],
+    },
+    {
+      tier: 3,
+      name: "guidance" as const,
+      fallback: "Trace tickets",
+      variants: [],
+    },
+  ],
   scoring: {
     weights: {
       required: 40,

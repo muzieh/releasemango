@@ -60,7 +60,21 @@ const scenario: ScenarioDefinition = {
     },
   },
   checks: { required: [], forbidden: [] },
-  hints: [{ tier: 1, text: "Inspect" }],
+  hints: [
+    { tier: 1, name: "concept" as const, fallback: "Inspect", variants: [] },
+    {
+      tier: 2,
+      name: "investigation" as const,
+      fallback: "Compare checks",
+      variants: [],
+    },
+    {
+      tier: 3,
+      name: "guidance" as const,
+      fallback: "Trace tickets",
+      variants: [],
+    },
+  ],
   scoring: {
     weights: {
       required: 40,
@@ -282,6 +296,7 @@ describe("generateWorkspace", () => {
       expect(storedManifest).toMatchObject({
         schemaVersion: 2,
         scenarioId: "non-linear",
+        nextHintTier: 1,
         workspaceInitialMain: "semantic-a",
         judgingBundle: {
           identity: "tiny-node-api",

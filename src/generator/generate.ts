@@ -95,6 +95,7 @@ const identityFields = (manifest: OwnershipManifest) => ({
   fixtureIdentity: manifest.fixtureIdentity,
   judgingBundle: manifest.judgingBundle,
   workspaceInitialMain: manifest.workspaceInitialMain,
+  nextHintTier: manifest.nextHintTier,
 });
 
 const sameIdentity = (
@@ -147,7 +148,10 @@ async function validateOwnedDestination(
     !Number.isSafeInteger(value.seed) ||
     value.generatedRefs === null ||
     typeof value.generatedRefs !== "object" ||
-    Array.isArray(value.generatedRefs)
+    Array.isArray(value.generatedRefs) ||
+    typeof value.nextHintTier !== "number" ||
+    value.nextHintTier < 1 ||
+    !Number.isSafeInteger(value.nextHintTier)
   )
     throw new Error("Ownership manifest shape is invalid.");
   const manifest = value as unknown as OwnershipManifest;
@@ -328,6 +332,7 @@ export async function generateWorkspace(
         integrity: validated.fixtureIdentity,
       },
       workspaceInitialMain: request.scenario.workspace.initialMain,
+      nextHintTier: 1,
       generatedRefs: {},
     };
     if (await exists(destination)) {

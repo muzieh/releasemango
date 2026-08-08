@@ -33,7 +33,26 @@ const scenario = {
     },
   },
   checks: { required: [], forbidden: [] },
-  hints: [{ tier: 1, text: "secret hint" }],
+  hints: [
+    {
+      tier: 1,
+      name: "concept" as const,
+      fallback: "secret hint",
+      variants: [],
+    },
+    {
+      tier: 2,
+      name: "investigation" as const,
+      fallback: "inspect public state",
+      variants: [],
+    },
+    {
+      tier: 3,
+      name: "guidance" as const,
+      fallback: "trace ticket relationships",
+      variants: [],
+    },
+  ],
   scoring: {
     weights: { required: 1, forbidden: 1, repository: 1, infrastructure: 1 },
     mandatoryChecks: [],

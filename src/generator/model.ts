@@ -47,6 +47,7 @@ export interface OwnershipManifest {
     readonly integrity: string;
   };
   readonly workspaceInitialMain: string;
+  readonly nextHintTier: number;
   readonly generatedRefs: Readonly<Record<string, string>>;
 }
 
