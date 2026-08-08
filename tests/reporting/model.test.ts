@@ -190,4 +190,20 @@ describe("buildReport", () => {
     expect(stdout).not.toContain("solution-commit");
     expect(stdout).not.toContain("a".repeat(40));
   });
+
+  it("never selects coaching that exposes a non-hash authored commit ID", () => {
+    const result = buildReport({
+      ...input([
+        check(
+          "a",
+          "required",
+          "fail",
+          "Inspect commit-a to restore the behavior.",
+        ),
+      ]),
+      authoredCommitIds: ["commit-a"],
+    });
+
+    expect(result.nextAction).not.toContain("commit-a");
+  });
 });

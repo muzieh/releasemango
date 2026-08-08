@@ -55,7 +55,11 @@ const freezeDeep = <T>(value: T): T => {
   return value;
 };
 
-const unsafeCoaching = (value: string): boolean =>
+const unsafeCoaching = (
+  value: string,
+  authoredCommitIds: readonly string[],
+): boolean =>
+  authoredCommitIds.some((id) => value.includes(id)) ||
   /\b[0-9a-f]{7,40}\b/iu.test(value) ||
   /`[^`]+`/u.test(value) ||
   /(?:^|\s)(?:git|pnpm|npm|yarn|node|rm|cp|mv)\s+[-\w]/iu.test(value) ||
@@ -142,7 +146,7 @@ export const buildReport = (input: BuildReportInput): CoachingReport => {
       if (check.status === "pass") continue;
       for (const candidate of [check.remediation, check.evidence.summary]) {
         const text = candidate?.trim();
-        if (text && !unsafeCoaching(text)) {
+        if (text && !unsafeCoaching(text, input.authoredCommitIds ?? [])) {
           nextAction = bounded(text);
           break;
         }
