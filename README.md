@@ -59,4 +59,6 @@ and use only local repositories. Automated tests must not require network
 access; exercise network-facing behavior through injected or fake boundaries.
 
 Architectural decisions and constraints are recorded in
-[`docs/adr/0001-mvp-architecture.md`](docs/adr/0001-mvp-architecture.md).
+[`docs/adr/0001-mvp-architecture.md`](docs/adr/0001-mvp-architecture.md). The
+canonical first curriculum scenario is documented in
+[`docs/tutorial-01.md`](docs/tutorial-01.md).

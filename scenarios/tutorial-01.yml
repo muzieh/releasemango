@@ -1,0 +1,185 @@
+schemaVersion: 1
+metadata:
+  id: tutorial-01
+  title: Assemble acceptance and production releases
+  description: >-
+    Practice selective release assembly from visible ticket branches and Git
+    history. Build distinct acceptance and production candidates, include
+    complete dependency chains, exclude unfinished work, and preserve both
+    intended policy outcomes when resolving a semantic conflict. Prerequisites:
+    Git 2.39+, Node.js 22+, and basic branch, cherry-pick, and
+    conflict-resolution familiarity. Allow 30–45 minutes of focused work.
+seed: 1401
+workspace:
+  initialMain: acceptance
+ticketStatuses:
+  - id: approved
+    name: Approved for release
+  - id: production-only
+    name: Production only
+  - id: incomplete
+    name: Incomplete — do not release
+tickets:
+  - { id: TEA-T01, title: Add a friendly greeting, status: approved }
+  - { id: TEA-T02, title: Add the multi-part feature, status: approved }
+  - { id: TEA-T03, title: Add shared JSON support, status: approved }
+  - { id: TEA-T04, title: Add the shared endpoint, status: approved }
+  - { id: TEA-T05, title: Add diagnostic endpoint, status: incomplete }
+  - { id: TEA-T06, title: Prepare acceptance readiness, status: approved }
+  - {
+      id: TEA-T07,
+      title: Prepare production readiness,
+      status: production-only,
+    }
+  - { id: TEA-T08, title: Restrict policy audience, status: production-only }
+  - { id: TEA-T09, title: Restrict policy caching, status: production-only }
+commits:
+  - {
+      id: single-greeting,
+      ticket: TEA-T01,
+      message: Add friendly greeting endpoint,
+      dependsOn: [],
+    }
+  - {
+      id: multi-route,
+      ticket: TEA-T02,
+      message: Start multi-part endpoint,
+      dependsOn: [],
+    }
+  - {
+      id: multi-implementation,
+      ticket: TEA-T02,
+      message: Complete multi-part endpoint,
+      dependsOn: [multi-route],
+    }
+  - {
+      id: json-helper,
+      ticket: TEA-T03,
+      message: Add shared JSON response helper,
+      dependsOn: [],
+    }
+  - {
+      id: dependent-feature,
+      ticket: TEA-T04,
+      message: Add shared feature endpoint,
+      dependsOn: [json-helper],
+    }
+  - {
+      id: forbidden-debug,
+      ticket: TEA-T05,
+      message: Explore diagnostic endpoint,
+      dependsOn: [],
+    }
+  - {
+      id: acceptance,
+      ticket: TEA-T06,
+      message: Define acceptance readiness,
+      dependsOn: [],
+    }
+  - {
+      id: production,
+      ticket: TEA-T07,
+      message: Define production readiness,
+      dependsOn: [],
+    }
+  - {
+      id: semantic-a,
+      ticket: TEA-T08,
+      message: Apply audience policy,
+      dependsOn: [],
+    }
+  - {
+      id: semantic-b,
+      ticket: TEA-T09,
+      message: Apply cache policy,
+      dependsOn: [],
+    }
+releases:
+  acceptance:
+    baseline: acceptance
+    tickets: [TEA-T01, TEA-T02, TEA-T03, TEA-T04, TEA-T06]
+    requiredChecks: [acceptance-readiness, greeting, multi, shared]
+    forbiddenChecks: [no-debug]
+  production:
+    baseline: production
+    tickets: [TEA-T07, TEA-T08, TEA-T09]
+    requiredChecks: [production-readiness, audience-policy, cache-policy]
+    forbiddenChecks: [no-debug, no-acceptance]
+checks:
+  required:
+    - {
+        id: acceptance-readiness,
+        command: node,
+        args: [judging/check.mjs, 'environment: "acceptance"'],
+      }
+    - { id: greeting, command: node, args: [judging/check.mjs, '"/greeting"'] }
+    - { id: multi, command: node, args: [judging/check.mjs, '"/multi"'] }
+    - { id: shared, command: node, args: [judging/check.mjs, '"/shared"'] }
+    - {
+        id: production-readiness,
+        command: node,
+        args: [judging/check.mjs, 'environment: "production"'],
+      }
+    - {
+        id: audience-policy,
+        command: node,
+        args: [judging/check.mjs, 'audience: "internal"'],
+      }
+    - {
+        id: cache-policy,
+        command: node,
+        args: [judging/check.mjs, 'cache: "private"'],
+      }
+  forbidden:
+    - { id: no-debug, command: node, args: [judging/check.mjs, '"/debug"'] }
+    - {
+        id: no-acceptance,
+        command: node,
+        args: [judging/check.mjs, 'environment: "acceptance"'],
+      }
+hints:
+  - tier: 1
+    name: concept
+    fallback:
+      A release candidate contains only complete work approved for that target.
+    variants:
+      - selector: { category: repository }
+        text:
+          Begin from the named release baseline before assembling its candidate.
+  - tier: 2
+    name: investigation
+    fallback:
+      Compare ticket status, dependency edges, and the changes on each visible
+      ticket branch.
+    variants:
+      - selector: { release: acceptance }
+        text:
+          Acceptance needs the complete approved feature chains, not their
+          partial commits.
+      - selector: { release: production }
+        text:
+          Production combines two valid policy intentions that touch the same
+          behavior.
+  - tier: 3
+    name: guidance
+    fallback:
+      Inspect the candidate diff against its baseline and verify every intended
+      outcome remains.
+    variants:
+      - selector: { category: forbidden }
+        text:
+          Remove work whose visible status says it must not ship to this target.
+scoring:
+  weights:
+    required: 50
+    forbidden: 20
+    repository: 20
+    infrastructure: 10
+  mandatoryChecks:
+    [
+      acceptance-readiness,
+      production-readiness,
+      no-debug,
+      repository.clean,
+      repository.ancestry,
+    ]
