@@ -33,7 +33,6 @@ tickets:
     }
   - { id: TEA-T08, title: Restrict policy audience, status: production-only }
   - { id: TEA-T09, title: Restrict policy caching, status: production-only }
-  - { id: TEA-T10, title: Reconcile production policy, status: production-only }
 commits:
   - {
       id: single-greeting,
@@ -95,12 +94,6 @@ commits:
       message: Apply cache policy,
       dependsOn: [],
     }
-  - {
-      id: semantic-resolution,
-      ticket: TEA-T10,
-      message: Reconcile both policy requirements,
-      dependsOn: [semantic-a, semantic-b],
-    }
 releases:
   acceptance:
     baseline: acceptance
@@ -109,7 +102,7 @@ releases:
     forbiddenChecks: [no-debug]
   production:
     baseline: production
-    tickets: [TEA-T07, TEA-T08, TEA-T09, TEA-T10]
+    tickets: [TEA-T07, TEA-T08, TEA-T09]
     requiredChecks: [production-readiness, audience-policy, cache-policy]
     forbiddenChecks: [no-debug, no-acceptance]
 checks:

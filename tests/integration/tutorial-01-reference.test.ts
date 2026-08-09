@@ -136,7 +136,7 @@ describe("tutorial-01 private reference workflows", () => {
       await pointRelease(
         repository,
         "production",
-        generated.commits["semantic-resolution"] ?? "",
+        generated.commits["semantic-a"] ?? "",
       );
       const wrongBase = await evaluateProductionRelease({
         repository,

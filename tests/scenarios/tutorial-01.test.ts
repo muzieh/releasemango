@@ -1,8 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadScenario } from "../../src/domain/scenarios/index.js";
 import { generateWorkspace } from "../../src/generator/index.js";
+import { createBrief, inspectStatus } from "../../src/inspection/index.js";
 import { withTemporaryDirectory } from "../support/temporary-directory.js";
 
 const checkout = new URL("../../", import.meta.url).pathname;
@@ -27,7 +29,7 @@ describe("tutorial-01 curriculum", () => {
       units: Record<string, { requires: string[] }>;
     };
     expect(scenario.commits.map(({ id }) => id)).toEqual(
-      Object.keys(manifest.units),
+      Object.keys(manifest.units).filter((id) => id !== "semantic-resolution"),
     );
     for (const commit of scenario.commits)
       expect(commit.dependsOn).toEqual(manifest.units[commit.id]?.requires);
@@ -75,14 +77,48 @@ describe("tutorial-01 curriculum", () => {
         destination,
         generatorVersion: "test",
       });
-      const tracked = await import("node:child_process").then(
-        ({ execFileSync }) =>
-          execFileSync("git", ["ls-files"], {
-            cwd: destination,
-            encoding: "utf8",
-          }),
-      );
+      const runGit = (...args: string[]): string =>
+        execFileSync("git", args, { cwd: destination, encoding: "utf8" });
+      const tracked = runGit("ls-files");
       expect(tracked).not.toMatch(/reference|judging|solution/iu);
+      const refs = runGit(
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/heads",
+        "refs/releasemango",
+      )
+        .trim()
+        .split("\n");
+      expect(refs).not.toContainEqual(
+        expect.stringMatching(/semantic-resolution|reference|solution/iu),
+      );
+      const reachable = [
+        ...new Set(
+          runGit("rev-list", ...refs)
+            .trim()
+            .split("\n"),
+        ),
+      ];
+      for (const commit of reachable) {
+        const message = runGit("show", "-s", "--format=%s", commit);
+        const files = runGit("ls-tree", "-r", "--name-only", commit);
+        const source = runGit("show", `${commit}:app.mjs`);
+        expect(`${message}\n${files}`).not.toMatch(
+          /semantic-resolution|reference|solution|reconcile both/iu,
+        );
+        expect(
+          source.includes('audience: "internal"') &&
+            source.includes('cache: "private"'),
+        ).toBe(false);
+      }
+      const learnerSurfaces = JSON.stringify({
+        brief: createBrief(loaded.value),
+        status: await inspectStatus(destination),
+        hints: loaded.value.hints,
+      });
+      expect(learnerSurfaces).not.toMatch(
+        /semantic-resolution|reference|\bsolution\b|reconcile both/iu,
+      );
     });
   });
 });
