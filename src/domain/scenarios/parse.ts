@@ -258,10 +258,34 @@ const validateChecks = (
 
 const validateHints = (
   hints: ScenarioV1Input["hints"],
+  parts: Pick<SemanticParts, "tickets" | "releases" | "commits">,
   diagnostics: MutableDiagnostic[],
 ): void => {
+  const names = ["concept", "investigation", "guidance"] as const;
+  const tickets = new Set(parts.tickets?.map(({ id }) => id) ?? []);
+  const checks = new Set([
+    ...(parts.releases?.acceptance.requiredChecks ?? []),
+    ...(parts.releases?.acceptance.forbiddenChecks ?? []),
+    ...(parts.releases?.production.requiredChecks ?? []),
+    ...(parts.releases?.production.forbiddenChecks ?? []),
+    "repository.branch",
+    "repository.baseline",
+    "repository.worktree",
+    "repository.clean",
+    "repository.conflicts",
+    "repository.ancestry",
+    "repository.setup",
+    "repository.cleanup",
+    "infrastructure.judging-assets",
+  ]);
+  const commitIds = parts.commits?.map(({ id }) => id) ?? [];
+  const unsafe = (text: string): boolean =>
+    commitIds.some((id) => text.includes(id)) ||
+    /\b[0-9a-f]{7,40}\b/iu.test(text) ||
+    /(?:^|\s)(?:git|pnpm|npm|yarn)\s+[-\w]/iu.test(text) ||
+    /cherry-pick|\bthen\b|hidden expected source/iu.test(text);
   hints.forEach((hint, index) => {
-    if (hint.tier !== index + 1)
+    if (hint.tier !== index + 1 || hint.name !== names[index])
       diagnostics.push(
         diagnostic(
           "hint.invalid-tier",
@@ -269,6 +293,74 @@ const validateHints = (
           ["hints", index, "tier"],
         ),
       );
+    if (unsafe(hint.fallback))
+      diagnostics.push(
+        diagnostic(
+          "hint.unsafe-text",
+          "Hint text exposes unsafe authored solution detail.",
+          ["hints", index, "fallback"],
+        ),
+      );
+    const seen = new Set<string>();
+    hint.variants.forEach((variant, variantIndex) => {
+      const [kind, value] = Object.entries(variant.selector)[0] as [
+        string,
+        string,
+      ];
+      const path = [
+        "hints",
+        index,
+        "variants",
+        variantIndex,
+        "selector",
+        kind,
+      ] as const;
+      const key = `${kind}:${value}`;
+      if (seen.has(key))
+        diagnostics.push(
+          diagnostic(
+            "hint.duplicate-selector",
+            `Hint selector '${key}' is declared more than once.`,
+            path,
+          ),
+        );
+      seen.add(key);
+      if (
+        (kind === "ticket" && !tickets.has(value)) ||
+        (kind === "check" && !checks.has(value))
+      )
+        diagnostics.push(
+          diagnostic(
+            "hint.selector-not-found",
+            `Hint selector '${key}' does not exist.`,
+            path,
+          ),
+        );
+      if (
+        (kind === "release" &&
+          value !== "acceptance" &&
+          value !== "production") ||
+        (kind === "category" &&
+          !["required", "forbidden", "repository", "infrastructure"].includes(
+            value,
+          ))
+      )
+        diagnostics.push(
+          diagnostic(
+            "hint.selector-not-found",
+            `Hint selector '${key}' does not exist.`,
+            path,
+          ),
+        );
+      if (unsafe(variant.text))
+        diagnostics.push(
+          diagnostic(
+            "hint.unsafe-text",
+            "Hint text exposes unsafe authored solution detail.",
+            ["hints", index, "variants", variantIndex, "text"],
+          ),
+        );
+    });
   });
 };
 
@@ -355,7 +447,7 @@ const validateSemantics = (parts: SemanticParts): MutableDiagnostic[] => {
   }
   validateReferences(parts, diagnostics);
   if (parts.checks) validateChecks(parts.checks, diagnostics);
-  if (parts.hints) validateHints(parts.hints, diagnostics);
+  if (parts.hints) validateHints(parts.hints, parts, diagnostics);
   if (parts.scoring) validateScoring(parts.scoring, parts.checks, diagnostics);
   return diagnostics;
 };
@@ -435,7 +527,15 @@ export const parseScenario = (
                 );
           if (issue.code === "unrecognized_keys" && issue.keys.length === 1)
             path.push(issue.keys[0] ?? "unknown");
-          return diagnostic("schema.invalid", issue.message, path);
+          const selectorIssue =
+            path[0] === "hints" &&
+            path[2] === "variants" &&
+            path[4] === "selector";
+          return diagnostic(
+            selectorIssue ? "hint.selector-not-found" : "schema.invalid",
+            issue.message,
+            path,
+          );
         }),
         ...semanticDiagnostics,
       ],
@@ -443,7 +543,10 @@ export const parseScenario = (
   }
   const diagnostics = validateSemantics(parsed.data);
   if (diagnostics.length > 0) return { ok: false, diagnostics };
-  return { ok: true, value: freezeDeep(structuredClone(parsed.data)) };
+  return {
+    ok: true,
+    value: freezeDeep(structuredClone(parsed.data)) as ScenarioDefinition,
+  };
 };
 
 export type { ScenarioDiagnostic };

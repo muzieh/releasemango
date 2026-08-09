@@ -26,7 +26,8 @@ describe("parseScenario", () => {
       "typecheck",
       "tests",
     ]);
-    expect(result.value.hints.map(({ tier }) => tier)).toEqual([1, 2]);
+    expect(result.value.hints.map(({ tier }) => tier)).toEqual([1, 2, 3]);
+    expect(Object.isFrozen(result.value.hints[0]?.variants)).toBe(true);
     expect(result.value.releases.acceptance).toEqual({
       baseline: "commit-a",
       tickets: ["TEA-101"],
@@ -183,6 +184,92 @@ describe("parseScenario", () => {
     expect(matching).toBeDefined();
     expect(matching?.message.length).toBeGreaterThan(0);
     expect(Array.isArray(matching?.path)).toBe(true);
+  });
+
+  it.each([
+    ["release", "acceptance", "missing", "hint.selector-not-found"],
+    ["category", "required", "unknown", "hint.selector-not-found"],
+    ["ticket", "TEA-102", "TEA-999", "hint.selector-not-found"],
+  ])("rejects unknown %s hint selectors", (kind, value, invalid, code) => {
+    const result = parseScenario(
+      replace(
+        `selector: { ${kind}: ${value} }`,
+        `selector: { ${kind}: ${invalid} }`,
+      ),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code,
+        path: ["hints", expect.any(Number), "variants", 0, "selector", kind],
+      }),
+    );
+  });
+
+  it("rejects duplicate hint selectors at the offending variant", () => {
+    const result = parseScenario(
+      replace(
+        "      - selector: { category: required }\n        text: Revisit the required behavior.",
+        "      - selector: { category: required }\n        text: Revisit the required behavior.\n      - selector: { category: required }\n        text: Check the public requirement.",
+      ),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "hint.duplicate-selector",
+        path: ["hints", 0, "variants", 1, "selector", "category"],
+      }),
+    );
+  });
+
+  it("accepts a check selector that is applicable to a release", () => {
+    const result = parseScenario(
+      replace(
+        "selector: { category: required }",
+        "selector: { check: typecheck }",
+      ),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a globally declared check selector that no release applies", () => {
+    const source = replace(
+      "selector: { category: required }",
+      "selector: { check: typecheck }",
+    )
+      .replace("requiredChecks: [tests, typecheck]", "requiredChecks: [tests]")
+      .replace("requiredChecks: [typecheck]", "requiredChecks: []");
+    const result = parseScenario(source);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual({
+      code: "hint.selector-not-found",
+      message: "Hint selector 'check:typecheck' does not exist.",
+      path: ["hints", 0, "variants", 0, "selector", "check"],
+    });
+  });
+
+  it.each([
+    "Inspect commit-a.",
+    "Inspect deadbeef.",
+    "Run git status.",
+    "Run pnpm test.",
+    "Cherry-pick this then that.",
+    "Use hidden expected source.",
+  ])("rejects unsafe authored hint text: %s", (text) => {
+    const result = parseScenario(
+      replace("Inspect the ticket relationships.", text),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "hint.unsafe-text",
+        path: ["hints", 0, "fallback"],
+      }),
+    );
   });
 
   it("aggregates independently actionable structural failures", () => {

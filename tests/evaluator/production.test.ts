@@ -435,7 +435,21 @@ function scenarioFixture() {
         },
       },
       checks: { required, forbidden },
-      hints: [{ tier: 1, text: "Fix it" }],
+      hints: [
+        { tier: 1, name: "concept" as const, fallback: "Fix it", variants: [] },
+        {
+          tier: 2,
+          name: "investigation" as const,
+          fallback: "Compare checks",
+          variants: [],
+        },
+        {
+          tier: 3,
+          name: "guidance" as const,
+          fallback: "Trace tickets",
+          variants: [],
+        },
+      ],
       scoring: {
         weights: {
           required: 40,

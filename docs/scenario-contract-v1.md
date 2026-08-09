@@ -31,8 +31,14 @@ The canonical minimal example is
   `args` array. Commands may contain letters, digits, `_`, `.`, `/`, and `-`;
   arguments may not contain NUL or line breaks. Checks are data and are not
   executed by this module.
-- `hints`: authored-order tiers with non-empty text. Tiers must be the
-  contiguous, unique sequence `1, 2, ...`.
+- `hints`: exactly three authored-order tiers: `1/concept`, `2/investigation`,
+  and `3/guidance`. Each has a non-empty `fallback` and an ordered `variants`
+  array. A variant has non-empty `text` and exactly one selector: `release`
+  (`acceptance` or `production`), evaluator `category`, applicable stable
+  `check`, or declared `ticket`. Duplicate selectors within a tier are rejected.
+  Authored text may not expose authored commit IDs, 7–40-character hexadecimal
+  hashes, exact Git/package-runner commands, cherry-pick sequences, or hidden
+  expected source.
 - `scoring.weights`: exactly the evaluator categories `required`, `forbidden`,
   `repository`, and `infrastructure`. Each numeric weight is non-negative and
   the four weights total exactly 100.
@@ -62,7 +68,8 @@ families are:
   `release.check-not-found`, `release.duplicate-check`, and
   `release.contradictory-check`;
 - `check.duplicate-id` and `check.unsafe-command`;
-- `hint.invalid-tier`;
+- `hint.invalid-tier`, `hint.selector-not-found`, `hint.duplicate-selector`, and
+  `hint.unsafe-text`;
 - `scoring.negative-weight`, `scoring.invalid-total`,
   `scoring.mandatory-check-not-found`, and `scoring.duplicate-mandatory-check`;
 - `path.read-failed` for loader I/O failures.

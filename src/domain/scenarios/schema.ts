@@ -16,6 +16,21 @@ const checkSchema = z.strictObject({
   args: z.array(z.string()),
 });
 
+const hintSelectorSchema = z
+  .strictObject({
+    release: z.enum(["acceptance", "production"]).optional(),
+    category: z
+      .enum(["required", "forbidden", "repository", "infrastructure"])
+      .optional(),
+    check: identifier.optional(),
+    ticket: identifier.optional(),
+  })
+  .refine(
+    (value) =>
+      Object.values(value).filter((item) => item !== undefined).length === 1,
+    "Exactly one hint selector is required.",
+  );
+
 export const scenarioV1Schema = z.strictObject({
   schemaVersion: z.literal(1),
   metadata: z.strictObject({
@@ -53,9 +68,16 @@ export const scenarioV1Schema = z.strictObject({
   }),
   hints: z
     .array(
-      z.strictObject({ tier: z.number().int().positive(), text: nonEmpty }),
+      z.strictObject({
+        tier: z.number().int().positive(),
+        name: z.enum(["concept", "investigation", "guidance"]),
+        fallback: nonEmpty,
+        variants: z.array(
+          z.strictObject({ selector: hintSelectorSchema, text: nonEmpty }),
+        ),
+      }),
     )
-    .min(1),
+    .length(3),
   scoring: z.strictObject({
     weights: z.strictObject({
       required: z.number(),

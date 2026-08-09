@@ -50,6 +50,9 @@ function manifestShape(value: unknown): value is OwnershipManifest {
     typeof item.fixture === "string" &&
     typeof item.fixtureIdentity === "string" &&
     typeof item.workspaceInitialMain === "string" &&
+    typeof item.nextHintTier === "number" &&
+    Number.isSafeInteger(item.nextHintTier) &&
+    item.nextHintTier >= 1 &&
     judging !== undefined &&
     typeof judging.identity === "string" &&
     typeof judging.integrity === "string" &&

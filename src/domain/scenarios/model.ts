@@ -47,9 +47,21 @@ export interface BehaviorCheck {
   readonly args: readonly string[];
 }
 
+export type HintTierName = "concept" | "investigation" | "guidance";
+export type HintSelector =
+  | { readonly release: "acceptance" | "production" }
+  | { readonly category: ScoringCategory }
+  | { readonly check: string }
+  | { readonly ticket: string };
+export interface HintVariant {
+  readonly selector: HintSelector;
+  readonly text: string;
+}
 export interface HintTier {
   readonly tier: number;
-  readonly text: string;
+  readonly name: HintTierName;
+  readonly fallback: string;
+  readonly variants: readonly HintVariant[];
 }
 
 export type ScoringCategory =

@@ -52,9 +52,23 @@ checks:
       args: [console.log, src]
 hints:
   - tier: 1
-    text: Inspect the ticket dependencies.
+    name: concept
+    fallback: Inspect the ticket relationships.
+    variants:
+      - selector: { category: required }
+        text: Revisit the required behavior.
   - tier: 2
-    text: Compare the release scopes.
+    name: investigation
+    fallback: Compare the release scopes.
+    variants:
+      - selector: { release: acceptance }
+        text: Inspect the acceptance release scope.
+  - tier: 3
+    name: guidance
+    fallback: Trace the ticket dependency relationships.
+    variants:
+      - selector: { ticket: TEA-102 }
+        text: Revisit the second ticket requirements.
 scoring:
   weights:
     required: 40

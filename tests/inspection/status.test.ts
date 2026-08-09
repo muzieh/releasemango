@@ -69,6 +69,7 @@ async function repository(): Promise<{
     fixtureIdentity: "a".repeat(64),
     judgingBundle: { identity: "fixture", integrity: "a".repeat(64) },
     workspaceInitialMain: "fixture",
+    nextHintTier: 1,
     generatedRefs,
   };
   await mkdir(join(root, ".git/releasemango"));
