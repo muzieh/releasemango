@@ -1,8 +1,13 @@
 # Release Mango
 
-Release Mango is a release-engineering practice tool. This initial foundation
-only provides a compiled command that reports the package version; scenarios,
-generation, Git operations, evaluation, and reporting behavior arrive later.
+Release Mango provides a deterministic release-engineering tutorial CLI. Use
+`releasemango new tutorial-01` to create an exercise, then run `brief`,
+`status`, `hint`, and `evaluate acceptance|production` from anywhere inside the
+generated workspace. See [the CLI contract](docs/cli.md) for options,
+machine-readable output, safety behavior, and exit codes.
+
+The built CLI composes deterministic generation, Git-backed inspection,
+progressive hints, isolated release evaluation, and coaching reports.
 
 ## Prerequisites
 
