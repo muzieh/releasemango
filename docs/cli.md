@@ -9,7 +9,7 @@ releasemango [--json] new tutorial-01 [path] [--seed <integer>] [--overwrite]
 releasemango [--json] brief
 releasemango [--json] status
 releasemango [--json] hint
-releasemango [--json] evaluate acceptance|production [--timeout <milliseconds>]
+releasemango [--json] evaluate acceptance|production
 releasemango --version
 ```
 
@@ -42,9 +42,9 @@ and solution details.
 |  130 | SIGINT cancellation after cleanup              |
 
 SIGINT is routed through the evaluator abort signal; evaluator subprocess and
-temporary-worktree cleanup completes before the process returns 130. Existing
-evaluator timeouts remain authoritative unless `--timeout` supplies a smaller
-per-check limit (primarily useful for automation and deterministic testing).
+temporary-worktree cleanup completes before the process returns 130. The
+authoritative evaluator timeout is 20 seconds per behavior check and cannot be
+extended by CLI input.
 
 ## Verification
 

@@ -11,6 +11,7 @@ export {
 } from "./production.js";
 export {
   DEFAULT_EVIDENCE_LIMIT,
+  DEFAULT_EVALUATION_TIMEOUT_MS,
   EVIDENCE_TRUNCATION_MARKER,
   type CheckCategory,
   type CheckEvidence,

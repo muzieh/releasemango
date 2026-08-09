@@ -18,6 +18,20 @@ import {
 const cli = resolve("dist/cli/index.js");
 const roots: string[] = [];
 
+function cliEnvironment(
+  cwd: string,
+  overrides: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv {
+  return {
+    PATH: process.env.PATH,
+    HOME: join(cwd, ".home"),
+    XDG_CONFIG_HOME: join(cwd, ".config"),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: join(cwd, ".gitconfig"),
+    ...overrides,
+  };
+}
+
 async function temporaryRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "releasemango-cli-"));
   roots.push(root);
@@ -28,13 +42,7 @@ async function run(args: string[], cwd: string) {
   return execa(process.execPath, [cli, ...args], {
     cwd,
     reject: false,
-    env: {
-      PATH: process.env.PATH,
-      HOME: join(cwd, ".home"),
-      XDG_CONFIG_HOME: join(cwd, ".config"),
-      GIT_CONFIG_NOSYSTEM: "1",
-      GIT_CONFIG_GLOBAL: join(cwd, ".gitconfig"),
-    },
+    env: cliEnvironment(cwd),
     stripFinalNewline: false,
   });
 }
@@ -70,16 +78,44 @@ async function pointReleaseBranches(repository: string): Promise<void> {
     );
 }
 
-async function slowNodePath(root: string): Promise<string> {
+async function slowNodeEnvironment(root: string, cwd: string) {
   const directory = join(root, "slow-bin");
   await mkdir(directory);
   const executable = join(directory, "node");
+  const marker = join(root, "child.pid");
   await writeFile(
     executable,
-    `#!/bin/sh\nexec "${process.execPath}" -e 'setTimeout(() => {}, 30000)'\n`,
+    `#!/bin/sh\nif [ ! -f "$RELEASEMANGO_TEST_CHILD_MARKER" ]; then\n  exec "${process.execPath}" -e 'require("node:fs").writeFileSync(process.env.RELEASEMANGO_TEST_CHILD_MARKER,String(process.pid));setTimeout(()=>{},30000)'\nfi\nexec "${process.execPath}" "$@"\n`,
   );
   await chmod(executable, 0o755);
-  return `${directory}:${process.env.PATH ?? ""}`;
+  return {
+    marker,
+    env: cliEnvironment(cwd, {
+      PATH: `${directory}:${process.env.PATH ?? ""}`,
+      RELEASEMANGO_TEST_CHILD_MARKER: marker,
+    }),
+  };
+}
+
+async function waitForChild(marker: string): Promise<number> {
+  for (let attempt = 0; attempt < 500; attempt += 1) {
+    try {
+      return Number(await readFile(marker, "utf8"));
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+  throw new Error("Evaluator child did not write its liveness marker.");
+}
+
+function expectChildGone(pid: number): void {
+  try {
+    process.kill(pid, 0);
+  } catch (error) {
+    expect((error as NodeJS.ErrnoException).code).toBe("ESRCH");
+    return;
+  }
+  throw new Error(`Evaluator child ${String(pid)} is still alive.`);
 }
 
 afterEach(async () =>
@@ -96,7 +132,7 @@ describe("built CLI command surface", () => {
     expect(result.stdout).toContain("brief");
     expect(result.stdout).toContain("status");
     expect(result.stdout).toContain("hint");
-    expect(result.stdout).toContain("evaluate [options] <target>");
+    expect(result.stdout).toContain("evaluate <target>");
     expect(result.stdout).toContain("--json");
     expect(result.stderr).toBe("");
   });
@@ -172,6 +208,66 @@ describe("built CLI command surface", () => {
     await rm(nested, { recursive: true });
   });
 
+  it("uses the default destination and repeats seeded generation exactly", async () => {
+    const defaultRoot = await temporaryRoot();
+    const defaultResult = await run(
+      ["--json", "new", "tutorial-01"],
+      defaultRoot,
+    );
+    expect(defaultResult).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(defaultResult.stdout)).toMatchObject({
+      destination: "tutorial-01",
+    });
+    expect(
+      JSON.parse(
+        await readFile(
+          join(defaultRoot, "tutorial-01/.git/releasemango/ownership-v1.json"),
+          "utf8",
+        ),
+      ),
+    ).toMatchObject({ scenarioId: "tutorial-01" });
+
+    const root = await temporaryRoot();
+    const first = join(root, "first");
+    const second = join(root, "second");
+    for (const destination of [first, second])
+      expect(
+        (await run(["new", "tutorial-01", destination, "--seed", "77"], root))
+          .exitCode,
+      ).toBe(0);
+    const manifest = (repository: string) =>
+      readFile(join(repository, ".git/releasemango/ownership-v1.json"), "utf8");
+    expect(await manifest(second)).toBe(await manifest(first));
+    const refs = async (repository: string) =>
+      (
+        await execa(
+          "git",
+          ["for-each-ref", "--format=%(refname) %(objectname)"],
+          { cwd: repository },
+        )
+      ).stdout;
+    expect(await refs(second)).toBe(await refs(first));
+  });
+
+  it("refuses and preserves an owned destination without overwrite", async () => {
+    const root = await temporaryRoot();
+    const repository = join(root, "workspace");
+    expect((await run(["new", "tutorial-01", repository], root)).exitCode).toBe(
+      0,
+    );
+    const before = await repositorySnapshot(repository);
+    const refused = await run(
+      ["--json", "new", "tutorial-01", repository],
+      root,
+    );
+    expect(refused).toMatchObject({ exitCode: 2, stderr: "" });
+    expect(JSON.parse(refused.stdout)).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: "DESTINATION_UNSAFE" }],
+    });
+    expect(await repositorySnapshot(repository)).toEqual(before);
+  });
+
   it("uses stable JSON diagnostics and usage exit code outside a workspace", async () => {
     const result = await run(["--json", "brief"], await temporaryRoot());
     expect(result.exitCode).toBe(2);
@@ -240,20 +336,24 @@ describe("built CLI command surface", () => {
     }
     expect(await repositorySnapshot(repository)).toEqual(before);
 
-    const timedOut = await execa(
+    const slow = await slowNodeEnvironment(root, repository);
+    const timeoutProcess = execa(
       process.execPath,
-      [cli, "--json", "evaluate", "production", "--timeout", "20"],
+      [cli, "--json", "evaluate", "production"],
       {
         cwd: repository,
         reject: false,
-        env: { PATH: await slowNodePath(root) },
+        env: slow.env,
         stripFinalNewline: false,
       },
     );
+    const childPid = await waitForChild(slow.marker);
+    const timedOut = await timeoutProcess;
     expect(timedOut.exitCode).toBe(3);
     expect(JSON.parse(timedOut.stdout)).toMatchObject({ schemaVersion: 1 });
+    expectChildGone(childPid);
     expect(await repositorySnapshot(repository)).toEqual(before);
-  });
+  }, 80_000);
 
   it("returns zero for passing acceptance and production reports", async () => {
     const root = await temporaryRoot();
@@ -278,16 +378,18 @@ describe("built CLI command surface", () => {
     );
     await pointReleaseBranches(repository);
     const before = await repositorySnapshot(repository);
+    const slow = await slowNodeEnvironment(root, repository);
     const child = execa(
       process.execPath,
-      [cli, "--json", "evaluate", "acceptance", "--timeout", "30000"],
+      [cli, "--json", "evaluate", "acceptance"],
       {
         cwd: repository,
         reject: false,
-        env: { PATH: await slowNodePath(root) },
+        env: slow.env,
         stripFinalNewline: false,
       },
     );
+    const evaluatorChildPid = await waitForChild(slow.marker);
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const current = await repositorySnapshot(repository);
       if (current.worktrees !== before.worktrees) break;
@@ -299,6 +401,7 @@ describe("built CLI command surface", () => {
     expect(result.exitCode).toBe(130);
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toMatchObject({ verdict: "cancelled" });
+    expectChildGone(evaluatorChildPid);
     expect(await repositorySnapshot(repository)).toEqual(before);
   });
 
@@ -310,12 +413,6 @@ describe("built CLI command surface", () => {
     );
     expect(malformed).toMatchObject({ exitCode: 2, stderr: "" });
     expect(malformed.stdout.length).toBeLessThan(512);
-    const invalidTimeout = await run(
-      ["--json", "evaluate", "acceptance", "--timeout", "0"],
-      root,
-    );
-    expect(invalidTimeout).toMatchObject({ exitCode: 2, stderr: "" });
-
     const unsafe = join(root, "occupied");
     await mkdir(unsafe);
     await writeFile(join(unsafe, "keep.txt"), "user data\n");
@@ -328,7 +425,7 @@ describe("built CLI command surface", () => {
       {
         cwd: root,
         reject: false,
-        env: { PATH: "" },
+        env: cliEnvironment(root, { PATH: "" }),
       },
     );
     expect(missingGit).toMatchObject({ exitCode: 3, stderr: "" });

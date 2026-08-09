@@ -41,12 +41,6 @@ const integer = (value: string): number => {
   return parsed;
 };
 
-const positiveInteger = (value: string): number => {
-  const parsed = integer(value);
-  if (parsed < 1) throw new InvalidArgumentError("must be a positive integer");
-  return parsed;
-};
-
 async function scenario(): Promise<ScenarioDefinition> {
   const result = await loadScenario(tutorialAssets().scenario);
   if (!result.ok) throw new Error("Bundled tutorial scenario is unavailable.");
@@ -279,78 +273,63 @@ export function createProgram(
   program
     .command("evaluate <target>")
     .description("evaluate acceptance or production release")
-    .option("--timeout <milliseconds>", "per-check timeout", positiveInteger)
-    .action(
-      async (
-        target: string,
-        options: { timeout?: number },
-        command: Command,
-      ) => {
-        const json = jsonMode(command);
-        if (target !== "acceptance" && target !== "production") {
-          setOutcome(
-            diagnostic(
-              "evaluate",
-              "TARGET_UNKNOWN",
-              `Unknown evaluation target '${target}'.`,
-              json,
-            ),
-          );
-          return;
-        }
-        const context = await workspaceContext("evaluate", json);
-        if ("outcome" in context) {
-          setOutcome(context.outcome);
-          return;
-        }
-        const evaluated =
-          target === "acceptance"
-            ? await evaluateAcceptanceRelease({
-                repository: context.root,
-                scenario: context.scenario,
-                judgingBundle: tutorialAssets().judgingBundle,
-                signal,
-                ...(options.timeout === undefined
-                  ? {}
-                  : { timeoutMs: options.timeout }),
-              })
-            : await evaluateProductionRelease({
-                repository: context.root,
-                scenario: context.scenario,
-                signal,
-                runner: trustedProductionRunner(),
-                ...(options.timeout === undefined
-                  ? {}
-                  : { timeoutMs: options.timeout }),
-              });
-        const report = buildReport({
-          scoring: context.scenario.scoring,
-          release: {
-            branch: evaluated.branch,
-            baseline: evaluated.baseline,
-            tickets: evaluated.tickets,
-          },
-          evaluation: evaluated,
-        });
-        const timedOut = evaluated.checks.some(
-          ({ evidence }) => evidence.summary === "Process timed out",
+    .action(async (target: string, _options: unknown, command: Command) => {
+      const json = jsonMode(command);
+      if (target !== "acceptance" && target !== "production") {
+        setOutcome(
+          diagnostic(
+            "evaluate",
+            "TARGET_UNKNOWN",
+            `Unknown evaluation target '${target}'.`,
+            json,
+          ),
         );
-        const exitCode =
-          evaluated.termination === "cancelled"
-            ? 130
-            : evaluated.status === "error" || timedOut
-              ? 3
-              : report.verdict === "pass"
-                ? 0
-                : 1;
-        setOutcome({
-          exitCode,
-          stdout: json
-            ? serializeReportJson(report)
-            : renderHumanReport(report),
-        });
-      },
-    );
+        return;
+      }
+      const context = await workspaceContext("evaluate", json);
+      if ("outcome" in context) {
+        setOutcome(context.outcome);
+        return;
+      }
+      const evaluated =
+        target === "acceptance"
+          ? await evaluateAcceptanceRelease({
+              repository: context.root,
+              scenario: context.scenario,
+              judgingBundle: tutorialAssets().judgingBundle,
+              signal,
+            })
+          : await evaluateProductionRelease({
+              repository: context.root,
+              scenario: context.scenario,
+              signal,
+              runner: trustedProductionRunner(),
+            });
+      const report = buildReport({
+        scoring: context.scenario.scoring,
+        release: {
+          branch: evaluated.branch,
+          baseline: evaluated.baseline,
+          tickets: evaluated.tickets,
+        },
+        evaluation: evaluated,
+      });
+      const timedOut = evaluated.checks.some(
+        ({ evidence }) => evidence.summary === "Process timed out",
+      );
+      const exitCode =
+        evaluated.termination === "cancelled"
+          ? 130
+          : evaluated.status === "error" || timedOut
+            ? 3
+            : report.verdict === "pass"
+              ? 0
+              : 1;
+      setOutcome({
+        exitCode,
+        stdout: json ? serializeReportJson(report) : renderHumanReport(report),
+      });
+    });
   return program;
 }
 

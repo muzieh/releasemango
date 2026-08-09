@@ -3,6 +3,7 @@ import type { GitAdapter, ProcessRunner } from "../git/index.js";
 
 export const DEFAULT_EVIDENCE_LIMIT = 4_096;
 export const EVIDENCE_TRUNCATION_MARKER = "\n…[truncated]";
+export const DEFAULT_EVALUATION_TIMEOUT_MS = 20_000;
 
 export type CheckStatus = "pass" | "fail" | "error";
 export type CheckCategory =

@@ -117,11 +117,22 @@ describe("branch evaluator", () => {
       expect(scenario.ok).toBe(true);
       if (!scenario.ok || !commit.ok) return;
 
+      const timeouts: number[] = [];
+      const processRunner = createProcessRunner();
+      const runner: ProcessRunner = {
+        run: (request) => {
+          timeouts.push(request.timeoutMs ?? -1);
+          return processRunner.run(request);
+        },
+      };
+
       const result = await evaluateBranch({
         repository,
         branch: "solution",
         baseline: "refs/heads/main",
         scenario: scenario.value,
+        timeoutMs: 999_999_999,
+        runner,
       });
 
       expect(result.termination).toBe("completed");
@@ -135,6 +146,7 @@ describe("branch evaluator", () => {
       ]);
       expect(result.checks.every(Object.isFrozen)).toBe(true);
       expect(Object.isFrozen(result.checks)).toBe(true);
+      expect(new Set(timeouts)).toEqual(new Set([20_000]));
       expect(await playerSnapshot(repository)).toEqual(before);
       const worktrees = await git.listWorktrees();
       expect(worktrees.ok).toBe(true);
