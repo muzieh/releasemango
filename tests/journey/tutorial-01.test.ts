@@ -1,7 +1,14 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { execa } from "execa";
+import { execa, type Options, type ResultPromise } from "execa";
 import { describe, expect, it } from "vitest";
 
 const cli = resolve("dist/cli/index.js");
@@ -20,11 +27,56 @@ interface Snapshot {
   worktrees: string;
 }
 
+class ProcessScope {
+  readonly #controller = new AbortController();
+  readonly #active = new Set<Promise<unknown>>();
+  readonly #parent: AbortSignal;
+  readonly #relay: () => void;
+
+  constructor(parent: AbortSignal) {
+    this.#parent = parent;
+    this.#relay = () => {
+      this.#controller.abort(parent.reason);
+    };
+    if (parent.aborted) this.#relay();
+    else parent.addEventListener("abort", this.#relay, { once: true });
+  }
+
+  get activeCount(): number {
+    return this.#active.size;
+  }
+
+  async run(
+    file: string,
+    args: string[],
+    options: Options,
+  ): Promise<Awaited<ResultPromise>> {
+    const child = execa(file, args, {
+      ...options,
+      cancelSignal: this.#controller.signal,
+      forceKillAfterDelay: 1_000,
+    });
+    this.#active.add(child);
+    try {
+      return await child;
+    } finally {
+      this.#active.delete(child);
+    }
+  }
+
+  async close(): Promise<void> {
+    this.#controller.abort(new Error("Journey process scope closed."));
+    await Promise.allSettled([...this.#active]);
+    this.#parent.removeEventListener("abort", this.#relay);
+  }
+}
+
 function environment(root: string): NodeJS.ProcessEnv {
   return {
     PATH: process.env.PATH,
     HOME: join(root, "home"),
     XDG_CONFIG_HOME: join(root, "xdg"),
+    TMPDIR: join(root, "tmp"),
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_CONFIG_GLOBAL: join(root, "global.gitconfig"),
     GIT_AUTHOR_DATE: "2026-01-02T03:04:05Z",
@@ -33,8 +85,13 @@ function environment(root: string): NodeJS.ProcessEnv {
   };
 }
 
-async function runCli(root: string, cwd: string, ...args: string[]) {
-  return execa(process.execPath, [cli, ...args], {
+async function runCli(
+  scope: ProcessScope,
+  root: string,
+  cwd: string,
+  ...args: string[]
+) {
+  return scope.run(process.execPath, [cli, ...args], {
     cwd,
     env: environment(root),
     reject: false,
@@ -42,57 +99,88 @@ async function runCli(root: string, cwd: string, ...args: string[]) {
   });
 }
 
-async function git(root: string, repository: string, ...args: string[]) {
-  return execa("git", args, {
+async function git(
+  scope: ProcessScope,
+  root: string,
+  repository: string,
+  ...args: string[]
+) {
+  return scope.run("git", args, {
     cwd: repository,
     env: environment(root),
     reject: false,
   });
 }
 
-async function gitOk(root: string, repository: string, ...args: string[]) {
-  const result = await git(root, repository, ...args);
+async function gitOk(
+  scope: ProcessScope,
+  root: string,
+  repository: string,
+  ...args: string[]
+) {
+  const result = await git(scope, root, repository, ...args);
   if (result.exitCode !== 0)
-    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+    throw new Error(`git ${args.join(" ")} failed: ${String(result.stderr)}`);
   return result.stdout;
 }
 
-async function snapshot(root: string, repository: string): Promise<Snapshot> {
+async function snapshot(
+  scope: ProcessScope,
+  root: string,
+  repository: string,
+): Promise<Snapshot> {
   return {
-    branch: await gitOk(root, repository, "symbolic-ref", "--short", "HEAD"),
+    branch: await gitOk(
+      scope,
+      root,
+      repository,
+      "symbolic-ref",
+      "--short",
+      "HEAD",
+    ),
     refs: await gitOk(
+      scope,
       root,
       repository,
       "for-each-ref",
       "--sort=refname",
       "--format=%(refname) %(objectname)",
     ),
-    index: await gitOk(root, repository, "write-tree"),
+    index: await gitOk(scope, root, repository, "write-tree"),
     status: await gitOk(
+      scope,
       root,
       repository,
       "status",
       "--porcelain=v1",
       "--untracked-files=all",
     ),
-    tracked: await gitOk(root, repository, "diff", "HEAD", "--"),
+    tracked: await gitOk(scope, root, repository, "diff", "HEAD", "--"),
     ownership: await readFile(
       join(repository, ".git/releasemango/ownership-v1.json"),
       "utf8",
     ),
-    worktrees: await gitOk(root, repository, "worktree", "list", "--porcelain"),
+    worktrees: await gitOk(
+      scope,
+      root,
+      repository,
+      "worktree",
+      "list",
+      "--porcelain",
+    ),
   };
 }
 
 async function observeCli(
+  scope: ProcessScope,
   root: string,
   repository: string,
   args: string[],
   hint = false,
 ) {
-  const before = await snapshot(root, repository);
-  const result = await runCli(root, repository, ...args);
-  const after = await snapshot(root, repository);
+  const before = await snapshot(scope, root, repository);
+  const result = await runCli(scope, root, repository, ...args);
+  const after = await snapshot(scope, root, repository);
   if (hint) {
     const beforeOwnership = JSON.parse(before.ownership) as Record<
       string,
@@ -115,29 +203,38 @@ async function observeCli(
 }
 
 async function resolveConflict(
+  scope: ProcessScope,
   root: string,
   repository: string,
   source: string,
   operation: "cherry-pick" | "merge",
 ) {
   expect(
-    await gitOk(root, repository, "diff", "--name-only", "--diff-filter=U"),
+    await gitOk(
+      scope,
+      root,
+      repository,
+      "diff",
+      "--name-only",
+      "--diff-filter=U",
+    ),
   ).toBe("app.mjs");
   await writeFile(join(repository, "app.mjs"), source);
-  await gitOk(root, repository, "add", "app.mjs");
-  await gitOk(root, repository, operation, "--continue");
+  await gitOk(scope, root, repository, "add", "app.mjs");
+  await gitOk(scope, root, repository, operation, "--continue");
 }
 
 async function cherryPickConflict(
+  scope: ProcessScope,
   root: string,
   repository: string,
   ref: string,
   source: string,
 ) {
-  expect((await git(root, repository, "cherry-pick", ref)).exitCode).not.toBe(
-    0,
-  );
-  await resolveConflict(root, repository, source, "cherry-pick");
+  expect(
+    (await git(scope, root, repository, "cherry-pick", ref)).exitCode,
+  ).not.toBe(0);
+  await resolveConflict(scope, root, repository, source, "cherry-pick");
 }
 
 function normalizeReport(report: Record<string, unknown>) {
@@ -160,11 +257,40 @@ function normalizeReport(report: Record<string, unknown>) {
   };
 }
 
-async function journey() {
+async function expectNoTemporaryArtifacts(
+  root: string,
+  repository: string,
+): Promise<void> {
+  const rootEntries = await readdir(root);
+  expect(rootEntries).not.toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(/^\.player\.staging-/),
+      expect.stringMatching(/^player\.backup-/),
+    ]),
+  );
+  expect(await readdir(join(root, "tmp"))).toEqual([]);
+  const metadataEntries = await readdir(join(repository, ".git/releasemango"), {
+    recursive: true,
+  }).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  });
+  expect(metadataEntries).not.toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(/(?:^|\/)(?:.*\.lock|.*\.tmp-[^/]*)$/),
+      expect.stringMatching(/(?:staging|backup|evaluation)/i),
+    ]),
+  );
+}
+
+async function journey(deadline: AbortSignal) {
   const root = await mkdtemp(join(tmpdir(), "releasemango-journey-"));
   const repository = join(root, "player");
+  const scope = new ProcessScope(deadline);
   try {
+    await mkdir(join(root, "tmp"));
     const generated = await runCli(
+      scope,
       root,
       root,
       "--json",
@@ -176,8 +302,14 @@ async function journey() {
     );
     expect(generated).toMatchObject({ exitCode: 0, stderr: "" });
 
-    const brief = await observeCli(root, repository, ["--json", "brief"]);
-    const status = await observeCli(root, repository, ["--json", "status"]);
+    const brief = await observeCli(scope, root, repository, [
+      "--json",
+      "brief",
+    ]);
+    const status = await observeCli(scope, root, repository, [
+      "--json",
+      "status",
+    ]);
     const briefJson = JSON.parse(brief.stdout) as Record<string, unknown>;
     const statusJson = JSON.parse(status.stdout) as Record<string, unknown>;
     expect(briefJson).toMatchObject({
@@ -191,8 +323,16 @@ async function journey() {
       ok: true,
     });
 
-    await gitOk(root, repository, "config", "user.name", "Journey Learner");
     await gitOk(
+      scope,
+      root,
+      repository,
+      "config",
+      "user.name",
+      "Journey Learner",
+    );
+    await gitOk(
+      scope,
       root,
       repository,
       "config",
@@ -200,6 +340,7 @@ async function journey() {
       "learner@example.test",
     );
     await gitOk(
+      scope,
       root,
       repository,
       "switch",
@@ -211,18 +352,18 @@ async function journey() {
       join(repository, "app.mjs"),
       `${acceptanceSource([])}addRoute("/debug", {});\n`,
     );
-    await gitOk(root, repository, "add", "app.mjs");
-    await gitOk(root, repository, "commit", "-m", "forbidden-debug");
-    await gitOk(root, repository, "switch", "main");
+    await gitOk(scope, root, repository, "add", "app.mjs");
+    await gitOk(scope, root, repository, "commit", "-m", "forbidden-debug");
+    await gitOk(scope, root, repository, "switch", "main");
 
-    const acceptanceHuman = await observeCli(root, repository, [
+    const acceptanceHuman = await observeCli(scope, root, repository, [
       "evaluate",
       "acceptance",
     ]);
     expect(acceptanceHuman).toMatchObject({ exitCode: 1, stderr: "" });
     expect(acceptanceHuman.stdout).toContain("no-debug");
     expect(acceptanceHuman.stdout.length).toBeLessThan(4_096);
-    const acceptanceFailed = await observeCli(root, repository, [
+    const acceptanceFailed = await observeCli(scope, root, repository, [
       "--json",
       "evaluate",
       "acceptance",
@@ -236,7 +377,13 @@ async function journey() {
       /judging|reference|commit [0-9a-f]{7}/i,
     );
 
-    const hint = await observeCli(root, repository, ["--json", "hint"], true);
+    const hint = await observeCli(
+      scope,
+      root,
+      repository,
+      ["--json", "hint"],
+      true,
+    );
     const hintJson = JSON.parse(hint.stdout) as Record<string, unknown>;
     expect(hintJson).toMatchObject({
       schemaVersion: 1,
@@ -249,6 +396,7 @@ async function journey() {
     );
 
     await gitOk(
+      scope,
       root,
       repository,
       "switch",
@@ -257,37 +405,42 @@ async function journey() {
       "refs/releasemango/baselines/acceptance",
     );
     await cherryPickConflict(
+      scope,
       root,
       repository,
       "refs/releasemango/commits/single-greeting",
       acceptanceSource(["greeting"]),
     );
     await cherryPickConflict(
+      scope,
       root,
       repository,
       "refs/releasemango/commits/multi-route",
       acceptanceSource(["greeting", "multi"]),
     );
     await gitOk(
+      scope,
       root,
       repository,
       "cherry-pick",
       "refs/releasemango/commits/multi-implementation",
     );
     await gitOk(
+      scope,
       root,
       repository,
       "cherry-pick",
       "refs/releasemango/commits/json-helper",
     );
     await cherryPickConflict(
+      scope,
       root,
       repository,
       "refs/releasemango/commits/dependent-feature",
       acceptanceSource(["greeting", "multi", "shared"]),
     );
-    await gitOk(root, repository, "switch", "main");
-    const acceptancePassed = await observeCli(root, repository, [
+    await gitOk(scope, root, repository, "switch", "main");
+    const acceptancePassed = await observeCli(scope, root, repository, [
       "--json",
       "evaluate",
       "acceptance",
@@ -299,6 +452,7 @@ async function journey() {
     >;
 
     await gitOk(
+      scope,
       root,
       repository,
       "branch",
@@ -306,7 +460,7 @@ async function journey() {
       "release/production",
       "refs/releasemango/baselines/acceptance",
     );
-    const productionFailed = await observeCli(root, repository, [
+    const productionFailed = await observeCli(scope, root, repository, [
       "--json",
       "evaluate",
       "production",
@@ -315,6 +469,7 @@ async function journey() {
     expect(productionFailed.stdout).toContain("repository.ancestry");
 
     await gitOk(
+      scope,
       root,
       repository,
       "switch",
@@ -325,6 +480,7 @@ async function journey() {
     expect(
       (
         await git(
+          scope,
           root,
           repository,
           "merge",
@@ -333,10 +489,17 @@ async function journey() {
         )
       ).exitCode,
     ).not.toBe(0);
-    await resolveConflict(root, repository, productionSource(false), "merge");
+    await resolveConflict(
+      scope,
+      root,
+      repository,
+      productionSource(false),
+      "merge",
+    );
     expect(
       (
         await git(
+          scope,
           root,
           repository,
           "merge",
@@ -345,9 +508,15 @@ async function journey() {
         )
       ).exitCode,
     ).not.toBe(0);
-    await resolveConflict(root, repository, productionSource(true), "merge");
-    await gitOk(root, repository, "switch", "main");
-    const productionPassed = await observeCli(root, repository, [
+    await resolveConflict(
+      scope,
+      root,
+      repository,
+      productionSource(true),
+      "merge",
+    );
+    await gitOk(scope, root, repository, "switch", "main");
+    const productionPassed = await observeCli(scope, root, repository, [
       "--json",
       "evaluate",
       "production",
@@ -358,7 +527,7 @@ async function journey() {
       unknown
     >;
 
-    const final = await snapshot(root, repository);
+    const final = await snapshot(scope, root, repository);
     expect(final.status).toBe("");
     expect(final.worktrees.match(/^worktree /gm)).toHaveLength(1);
     expect(final.refs).not.toContain("refs/releasemango/evaluator");
@@ -386,16 +555,46 @@ async function journey() {
       productionPass: normalizeReport(productionPassJson),
     };
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await scope.close();
+    try {
+      await expectNoTemporaryArtifacts(root, repository);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   }
 }
 
 describe("tutorial-01 learner journey", () => {
   it("is deterministic across two isolated built-CLI and real-Git runs", async () => {
     const started = Date.now();
-    const first = await journey();
-    const second = await journey();
-    expect(second).toEqual(first);
-    expect(Date.now() - started).toBeLessThan(60_000);
+    const deadline = new AbortController();
+    const timeout = setTimeout(() => {
+      deadline.abort(new Error("The two-run journey exceeded 55 seconds."));
+    }, 55_000);
+    try {
+      const first = await journey(deadline.signal);
+      const second = await journey(deadline.signal);
+      expect(second).toEqual(first);
+      expect(Date.now() - started).toBeLessThan(60_000);
+    } finally {
+      clearTimeout(timeout);
+      deadline.abort(new Error("The two-run journey finished."));
+    }
   }, 60_000);
+
+  it("cancels and awaits every tracked child before teardown", async () => {
+    const deadline = new AbortController();
+    const scope = new ProcessScope(deadline.signal);
+    const running = scope.run(
+      process.execPath,
+      ["-e", "setInterval(() => undefined, 30_000)"],
+      { reject: false },
+    );
+    expect(scope.activeCount).toBe(1);
+    await scope.close();
+    await running.catch(() => {
+      return undefined;
+    });
+    expect(scope.activeCount).toBe(0);
+  });
 });
