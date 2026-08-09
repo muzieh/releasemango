@@ -92,4 +92,68 @@ describe("requestHint", () => {
       });
     },
   );
+
+  it.each(["null", "[]", "true", "42", '"metadata"'])(
+    "returns a stable diagnostic and preserves non-object JSON metadata: %s",
+    async (contents) => {
+      const repository = await mkdtemp(join(tmpdir(), "releasemango-hint-"));
+      const directory = join(repository, ".git", "releasemango");
+      await mkdir(directory, { recursive: true });
+      const path = join(directory, "ownership-v1.json");
+      await writeFile(path, contents);
+      await expect(requestHint(request(repository))).resolves.toEqual({
+        ok: false,
+        diagnostics: [
+          expect.objectContaining({ code: "hint.metadata-malformed" }),
+        ],
+      });
+      await expect(readFile(path, "utf8")).resolves.toBe(contents);
+    },
+  );
+
+  it("serializes concurrent requests so every successful hint consumes one tier", async () => {
+    const repository = await mkdtemp(join(tmpdir(), "releasemango-hint-"));
+    const directory = join(repository, ".git", "releasemango");
+    await mkdir(directory, { recursive: true });
+    const path = join(directory, "ownership-v1.json");
+    await writeFile(
+      path,
+      `${JSON.stringify({ schemaVersion: 2, scenarioId: "tutorial", nextHintTier: 1 })}\n`,
+    );
+
+    const results = await Promise.all([
+      requestHint(request(repository)),
+      requestHint(request(repository)),
+      requestHint(request(repository)),
+    ]);
+
+    expect(
+      results
+        .map((result) =>
+          result.ok && result.value.state === "hint" ? result.value.tier : null,
+        )
+        .sort(),
+    ).toEqual([1, 2, 3]);
+    expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({
+      nextHintTier: 4,
+    });
+  });
+
+  it("fails a lock contender without reporting success or advancing metadata", async () => {
+    const repository = await mkdtemp(join(tmpdir(), "releasemango-hint-"));
+    const directory = join(repository, ".git", "releasemango");
+    await mkdir(directory, { recursive: true });
+    const path = join(directory, "ownership-v1.json");
+    const contents = `${JSON.stringify({ schemaVersion: 2, scenarioId: "tutorial", nextHintTier: 1 })}\n`;
+    await writeFile(path, contents);
+    await mkdir(`${path}.lock`);
+
+    await expect(requestHint(request(repository))).resolves.toEqual({
+      ok: false,
+      diagnostics: [
+        expect.objectContaining({ code: "hint.metadata-write-failed" }),
+      ],
+    });
+    await expect(readFile(path, "utf8")).resolves.toBe(contents);
+  });
 });

@@ -4,7 +4,9 @@ Hint selection is deterministic from the parsed scenario, public workspace
 status, optional latest coaching report, and the workspace-wide `nextHintTier`
 in `.git/releasemango/ownership-v1.json`.
 
-Successful selected hints advance the counter once. `solved`, `exhausted`, and
+Successful selected hints advance the counter once. Requests serialize through
+an exclusive ownership-metadata lock before reading the counter, so concurrent
+processes consume distinct tiers. `solved`, `exhausted`, lock contention, and
 system diagnostic results do not write. The counter is initialized to `1` by
 workspace generation and is never inferred or reset from the current failure.
 

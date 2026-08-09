@@ -258,14 +258,16 @@ const validateChecks = (
 
 const validateHints = (
   hints: ScenarioV1Input["hints"],
-  parts: Pick<SemanticParts, "tickets" | "checks" | "commits">,
+  parts: Pick<SemanticParts, "tickets" | "releases" | "commits">,
   diagnostics: MutableDiagnostic[],
 ): void => {
   const names = ["concept", "investigation", "guidance"] as const;
   const tickets = new Set(parts.tickets?.map(({ id }) => id) ?? []);
   const checks = new Set([
-    ...(parts.checks?.required.map(({ id }) => id) ?? []),
-    ...(parts.checks?.forbidden.map(({ id }) => id) ?? []),
+    ...(parts.releases?.acceptance.requiredChecks ?? []),
+    ...(parts.releases?.acceptance.forbiddenChecks ?? []),
+    ...(parts.releases?.production.requiredChecks ?? []),
+    ...(parts.releases?.production.forbiddenChecks ?? []),
     "repository.branch",
     "repository.baseline",
     "repository.worktree",

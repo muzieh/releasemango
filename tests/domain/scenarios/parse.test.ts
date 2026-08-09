@@ -224,6 +224,33 @@ describe("parseScenario", () => {
     );
   });
 
+  it("accepts a check selector that is applicable to a release", () => {
+    const result = parseScenario(
+      replace(
+        "selector: { category: required }",
+        "selector: { check: typecheck }",
+      ),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a globally declared check selector that no release applies", () => {
+    const source = replace(
+      "selector: { category: required }",
+      "selector: { check: typecheck }",
+    )
+      .replace("requiredChecks: [tests, typecheck]", "requiredChecks: [tests]")
+      .replace("requiredChecks: [typecheck]", "requiredChecks: []");
+    const result = parseScenario(source);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual({
+      code: "hint.selector-not-found",
+      message: "Hint selector 'check:typecheck' does not exist.",
+      path: ["hints", 0, "variants", 0, "selector", "check"],
+    });
+  });
+
   it.each([
     "Inspect commit-a.",
     "Inspect deadbeef.",
