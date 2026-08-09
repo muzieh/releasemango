@@ -11,6 +11,7 @@ import {
 } from "../git/index.js";
 import {
   DEFAULT_EVIDENCE_LIMIT,
+  DEFAULT_EVALUATION_TIMEOUT_MS,
   EVIDENCE_TRUNCATION_MARKER,
   type CheckCategory,
   type CheckStatus,
@@ -98,7 +99,10 @@ export async function evaluateBranch(
             check,
             category,
             worktree,
-            request.timeoutMs,
+            Math.min(
+              request.timeoutMs ?? DEFAULT_EVALUATION_TIMEOUT_MS,
+              DEFAULT_EVALUATION_TIMEOUT_MS,
+            ),
             request.signal,
             runner,
             now,

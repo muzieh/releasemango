@@ -1,16 +1,12 @@
 #!/usr/bin/env node
-import { createRequire } from "node:module";
-import { Command } from "commander";
+import { runProgram } from "./program.js";
 
-interface PackageMetadata {
-  version: string;
-}
+const controller = new AbortController();
+process.on("SIGINT", () => {
+  controller.abort();
+});
 
-const require = createRequire(import.meta.url);
-const packageMetadata = require("../../package.json") as PackageMetadata;
-
-new Command()
-  .name("releasemango")
-  .description("Practice release engineering in generated repositories")
-  .version(packageMetadata.version)
-  .parse();
+const outcome = await runProgram(process.argv.slice(2), controller.signal);
+if (outcome.stdout) process.stdout.write(outcome.stdout);
+if (outcome.stderr) process.stderr.write(outcome.stderr);
+process.exitCode = outcome.exitCode;
