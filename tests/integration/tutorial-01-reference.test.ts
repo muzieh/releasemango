@@ -24,8 +24,10 @@ describe("tutorial-01 private reference workflows", () => {
         await withTemporaryDirectory(async (parent) => {
           const repository = join(parent, "player");
           await generateTutorial(repository);
-          if (release === "acceptance") await assembleAcceptance(repository);
-          else await assembleProduction(repository);
+          const workflow =
+            release === "acceptance"
+              ? await assembleAcceptance(repository)
+              : await assembleProduction(repository);
           const scenario = await tutorialScenario();
           const result =
             release === "acceptance"
@@ -40,6 +42,27 @@ describe("tutorial-01 private reference workflows", () => {
                   runner: trustedProductionRunner(),
                 });
           expect(result.status).toBe("pass");
+          expect(workflow.beforeFinal.status).toBe("fail");
+          expect(workflow.beforeFinal.checks).toContainEqual(
+            expect.objectContaining({
+              id: release === "acceptance" ? "shared" : "cache-policy",
+              category: "required",
+              status: "fail",
+            }),
+          );
+          expect(workflow.appliedUnits).toEqual(
+            release === "acceptance"
+              ? [
+                  "single-greeting",
+                  "multi-route",
+                  "multi-implementation",
+                  "json-helper",
+                  "dependent-feature",
+                ]
+              : ["semantic-a", "semantic-b"],
+          );
+          expect(workflow.descendsFromBaseline).toBe(true);
+          expect(workflow.conflicts).toEqual([]);
           expect(await status(repository)).toBe("");
         });
       }, 20_000);
