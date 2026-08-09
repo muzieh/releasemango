@@ -3,20 +3,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createGitAdapter } from "../../src/git/index.js";
 import type { ProcessRunner } from "../../src/git/index.js";
-import { withTemporaryDirectory } from "../support/temporary-directory.js";
+import { withGitRepository } from "../support/git-repository.js";
 
 describe("Git adapter", () => {
   it("creates deterministic commits and exposes structured repository state", async () => {
-    await withTemporaryDirectory(async (parent) => {
-      const ids: string[] = [];
-      for (const name of ["repo one", "repo two"]) {
-        const repository = join(parent, name);
-        const git = createGitAdapter(repository, {
-          environment: {
-            GIT_CONFIG_GLOBAL: join(parent, "missing-global"),
-            GIT_CONFIG_SYSTEM: join(parent, "missing-system"),
-          },
-        });
+    const ids: string[] = [];
+    for (const name of ["repo one", "repo two"]) {
+      await withGitRepository(async ({ git, paths }) => {
+        const repository = paths.repository;
         expect((await git.initialize("main")).ok).toBe(true);
         await writeFile(join(repository, "file.txt"), "same\n");
         expect((await git.stage(["file.txt"])).ok).toBe(true);
@@ -64,7 +58,7 @@ describe("Git adapter", () => {
         expect(ref.ok && ref.id).toBe(commit.id);
         const worktrees = await git.listWorktrees();
         expect(worktrees.ok && worktrees.entries[0]?.path).toBe(repository);
-        const detached = join(parent, `${name} detached`);
+        const detached = join(paths.root, `${name} detached`);
         expect((await git.addDetachedWorktree(detached, commit.id)).ok).toBe(
           true,
         );
@@ -76,9 +70,9 @@ describe("Git adapter", () => {
           await git.isAncestor("refs/heads/feature", `${commit.id}^`),
         ).toMatchObject({ ok: false, operation: "is-ancestor" });
         expect((await git.removeWorktree(detached)).ok).toBe(true);
-      }
-      expect(ids[0]).toBe(ids[1]);
-    });
+      });
+    }
+    expect(ids[0]).toBe(ids[1]);
   });
 
   it("keeps the source path of copy records separate from following entries", async () => {
@@ -115,5 +109,28 @@ describe("Git adapter", () => {
         },
       ],
     });
+  });
+
+  it("bounds Git processes by default", async () => {
+    let timeoutMs: number | undefined;
+    const runner: ProcessRunner = {
+      run(request) {
+        timeoutMs = request.timeoutMs;
+        return Promise.resolve({
+          kind: "completed",
+          executable: request.executable,
+          args: request.args,
+          cwd: request.cwd,
+          exitCode: 0,
+          stdout: "0123456789abcdef\n",
+          stderr: "",
+          termination: "exit",
+        });
+      },
+    };
+
+    await createGitAdapter("/unused", { runner }).resolveRef("HEAD");
+
+    expect(timeoutMs).toBe(20_000);
   });
 });
