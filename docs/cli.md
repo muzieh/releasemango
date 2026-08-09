@@ -9,7 +9,7 @@ releasemango [--json] new tutorial-01 [path] [--seed <integer>] [--overwrite]
 releasemango [--json] brief
 releasemango [--json] status
 releasemango [--json] hint
-releasemango [--json] evaluate acceptance|production
+releasemango [--json] evaluate acceptance|production [--timeout <milliseconds>]
 releasemango --version
 ```
 
@@ -43,7 +43,8 @@ and solution details.
 
 SIGINT is routed through the evaluator abort signal; evaluator subprocess and
 temporary-worktree cleanup completes before the process returns 130. Existing
-evaluator timeouts remain authoritative.
+evaluator timeouts remain authoritative unless `--timeout` supplies a smaller
+per-check limit (primarily useful for automation and deterministic testing).
 
 ## Verification
 

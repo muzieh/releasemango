@@ -2,7 +2,7 @@
 import { runProgram } from "./program.js";
 
 const controller = new AbortController();
-process.once("SIGINT", () => {
+process.on("SIGINT", () => {
   controller.abort();
 });
 
