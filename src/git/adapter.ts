@@ -127,8 +127,12 @@ export interface GitAdapter {
 }
 
 const gitEnvironmentKeys = [
+  "HOME",
+  "XDG_CONFIG_HOME",
   "GIT_CONFIG_GLOBAL",
   "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_NOSYSTEM",
+  "GIT_TEMPLATE_DIR",
   "GIT_AUTHOR_NAME",
   "GIT_AUTHOR_EMAIL",
   "GIT_AUTHOR_DATE",
@@ -157,6 +161,7 @@ export function createGitAdapter(
       args,
       cwd: repository,
       environment: { ...baseEnvironment, ...environment },
+      timeoutMs: options.timeoutMs ?? 20_000,
       ...options,
     };
     const process = await runner.run(request);
