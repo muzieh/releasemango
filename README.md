@@ -1,69 +1,85 @@
 # Release Mango
 
-Release Mango provides a deterministic release-engineering tutorial CLI. Use
-`releasemango new tutorial-01` to create an exercise, then run `brief`,
-`status`, `hint`, and `evaluate acceptance|production` from anywhere inside the
-generated workspace. See [the CLI contract](docs/cli.md) for options,
-machine-readable output, safety behavior, and exit codes.
+Release Mango is a local Git release-engineering tutorial. Version 0.1.0
+contains the canonical `tutorial-01` journey.
 
-The built CLI composes deterministic generation, Git-backed inspection,
-progressive hints, isolated release evaluation, and coaching reports.
+## Prerequisites and installation
 
-## Prerequisites
-
-- Node.js 22 or newer
-- pnpm 10.18.0
-- Git 2.39 or newer
-- Linux or macOS (Windows support is deferred)
-
-## Install and verify
-
-Install exactly the dependency graph committed in `pnpm-lock.yaml`:
+Use Node.js 22 or newer and Git 2.39 or newer on Linux or macOS. Repository
+development uses pnpm 10.18.0. From a directory containing the locally built
+candidate:
 
 ```sh
-pnpm install --frozen-lockfile
+pnpm add --offline ./releasemango-0.1.0.tgz
+./node_modules/.bin/releasemango --version
 ```
 
-Run every local quality gate:
+The package and CLI require no network access at runtime.
+
+## The learner loop
+
+Choose a new, empty destination that you own, then run the five-command loop:
 
 ```sh
-pnpm verify
+releasemango new tutorial-01 ./my-tutorial
+cd ./my-tutorial
+releasemango brief
+releasemango status
+releasemango evaluate acceptance
+releasemango evaluate production
 ```
 
-`pnpm verify` fails at the first unsuccessful gate and runs the same sequence as
-pull-request CI: formatting, linting, typechecking, tests, and build.
+Between CLI commands, use ordinary Git commands (`git switch`,
+`git cherry-pick`, `git merge`, `git add`, and `git commit`) to assemble the
+requested release branches. If you get stuck, `releasemango hint` gives an
+optional progressive hint.
 
-To reproduce CI from a clean checkout:
+Remove only the workspace path you explicitly created and have verified, for
+example `rm -rf -- ./my-tutorial` from its parent after leaving the directory.
+Never point cleanup at a broad, empty, or unverified path.
 
-```sh
-git clean -ndx
-pnpm install --frozen-lockfile
-pnpm verify
-```
+## JSON automation contracts
 
-The first command is a non-destructive preview of untracked and ignored files;
-remove or relocate any reported local artifacts before running the install and
-verification commands when a truly clean checkout is required.
+Pass `--json` for machine-readable output. The versioned contracts are
+[CLI behavior](https://github.com/muzieh/releasemango/blob/main/docs/cli.md),
+[report JSON v1](https://github.com/muzieh/releasemango/blob/main/docs/report-json-v1.md),
+and
+[hint JSON v1](https://github.com/muzieh/releasemango/blob/main/docs/hint-json-v1.md).
 
-After building, print the package version:
+## Privacy and safety
 
-```sh
-node dist/cli/index.js --version
-```
+Release Mango performs local filesystem, Git, and bounded child-process work. It
+has no telemetry and requires no network access. Inspection, hints, and
+evaluation do not change the learner's current branch, index, or tracked
+worktree. Evaluation uses temporary Git worktrees and removes them on
+completion. Diagnostics are bounded and avoid exposing private judging
+implementation details; temporary staging, backup, and evaluation artifacts are
+cleaned on success, failure, timeout, or interruption.
 
-## Contributing
+## Troubleshooting
 
-Work test-first: add the smallest focused test, run it and confirm the expected
-failure (red), implement only enough behavior to pass (green), then refactor
-while keeping the test green. Run all quality gates before submitting a change.
-Tests that need a workspace must use an isolated OS temporary directory and
-clean it up; never generate a player workspace inside this source tree. Git
-integration tests must also isolate `HOME`, XDG and Git global/system config,
-pass deterministic identity and timestamps explicitly, avoid ambient templates,
-and use only local repositories. Automated tests must not require network
-access; exercise network-facing behavior through injected or fake boundaries.
+- **Unsupported Node or Git:** check `node --version` (22+) and `git --version`
+  (2.39+) before retrying.
+- **Destination rejected:** `new` requires a missing or empty destination owned
+  by the current user. Choose a fresh path; do not delete unknown contents.
+- **Missing branches or refs:** run `git show-ref` and `releasemango status`;
+  create the requested release branch from the scenario's named baseline and use
+  the generated `refs/releasemango/*` refs.
+- **Merge or cherry-pick conflict:** inspect `git status`, resolve the
+  learner-created conflicts, stage the resolution, and continue the operation.
+  Abort it with the matching Git command if you want to start over.
+- **Exit 3:** evaluation timed out or encountered infrastructure trouble. Read
+  stderr, confirm required tools and refs, and retry after correcting the
+  environment.
+- **Exit 130:** the command was interrupted. Confirm no Git operation is still
+  active, inspect `git worktree list`, and retry; Release Mango attempts bounded
+  cleanup before exiting.
 
-Architectural decisions and constraints are recorded in
-[`docs/adr/0001-mvp-architecture.md`](docs/adr/0001-mvp-architecture.md). The
-canonical first curriculum scenario is documented in
-[`docs/tutorial-01.md`](docs/tutorial-01.md).
+## Known limitations
+
+The MVP supports Linux and macOS, one scenario, and command-line interaction.
+Windows, a TUI, additional scenarios, a `solution` command, and agent-specific
+skills are not included.
+
+Contributors can reproduce all gates and the clean-consumer proof with the
+[release-candidate checklist](https://github.com/muzieh/releasemango/blob/main/docs/release-candidate-checklist.md).

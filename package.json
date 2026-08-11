@@ -2,7 +2,26 @@
   "name": "releasemango",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
+  "files": [
+    "dist/cli",
+    "dist/domain",
+    "dist/evaluator",
+    "dist/generator",
+    "dist/git",
+    "dist/hints",
+    "dist/inspection",
+    "dist/reporting",
+    "scenarios/tutorial-01.yml",
+    "fixtures/tiny-node-api/baseline",
+    "fixtures/tiny-node-api/changes",
+    "fixtures/tiny-node-api/states.json",
+    "fixtures/tiny-node-api/judging/check.mjs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22"
   },
