@@ -1,5 +1,4 @@
 import {
-  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -7,10 +6,11 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execa, type Options, type ResultPromise } from "execa";
 import { describe, expect, it } from "vitest";
+import { parse, stringify } from "yaml";
 
 let cli = resolve("dist/cli/index.js");
 const packageRoot = resolve(".");
@@ -18,6 +18,16 @@ const packageRoot = resolve(".");
 interface PackResult {
   readonly filename: string;
   readonly files: readonly { readonly path: string }[];
+}
+
+interface PnpmLock {
+  importers: Record<string, unknown>;
+  packages: Record<string, unknown>;
+  snapshots: Record<string, unknown>;
+}
+
+interface PnpmImporter {
+  dependencies: Record<string, { version: string }>;
 }
 
 async function packCandidate(): Promise<PackResult> {
@@ -50,25 +60,62 @@ async function withInstalledCandidate<T>(
     const store = await execa("pnpm", ["store", "path"], {
       cwd: packageRoot,
     });
-    const sourceCache =
-      process.platform === "darwin"
-        ? join(homedir(), "Library/Caches/pnpm")
-        : join(homedir(), ".cache/pnpm");
-    await cp(
-      join(sourceCache, "metadata-v1.3/registry.npmjs.org"),
-      join(root, "cache/pnpm/metadata-v1.3/registry.npmjs.org"),
-      { recursive: true },
+    const tarballReference = `file:${tarball}`;
+    const candidateKey = `releasemango@${tarballReference}`;
+    const lock = parse(
+      await readFile(join(packageRoot, "pnpm-lock.yaml"), "utf8"),
+    ) as PnpmLock;
+    const rootImporter = lock.importers["."] as PnpmImporter;
+    const manifest = JSON.parse(
+      await readFile(join(packageRoot, "package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+    const runtimeVersions = Object.fromEntries(
+      Object.keys(manifest.dependencies).map((name) => {
+        const dependency = rootImporter.dependencies[name];
+        if (!dependency) throw new Error(`Lockfile is missing ${name}.`);
+        return [name, dependency.version];
+      }),
     );
+    lock.importers = {
+      ".": {
+        dependencies: {
+          releasemango: {
+            specifier: tarballReference,
+            version: tarballReference,
+          },
+        },
+      },
+    };
+    lock.packages[candidateKey] = {
+      resolution: { tarball: tarballReference },
+      version: "0.1.0",
+      engines: { node: ">=22" },
+      hasBin: true,
+    };
+    lock.snapshots[candidateKey] = {
+      dependencies: runtimeVersions,
+    };
+    await Promise.all([
+      writeFile(
+        join(consumer, "package.json"),
+        JSON.stringify({
+          private: true,
+          dependencies: { releasemango: tarballReference },
+        }),
+      ),
+      writeFile(join(consumer, "pnpm-lock.yaml"), stringify(lock)),
+    ]);
+    expect(await readdir(join(root, "cache"))).toEqual([]);
     await execa(
       "pnpm",
       [
         "--dir",
         consumer,
-        "add",
+        "install",
         "--offline",
+        "--frozen-lockfile",
         "--store-dir",
         store.stdout,
-        tarball,
       ],
       {
         cwd: consumer,
